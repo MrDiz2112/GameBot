@@ -1,0 +1,34 @@
+# Зависимости
+node_modules
+npm-debug.log
+
+# Git
+.git
+.gitignore
+
+# Файлы среды
+.env
+.env.*
+
+# Файлы IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Собранные файлы
+dist
+build
+
+# Данные
+data
+*.db
+*.sqlite
+
+# Логи
+logs
+*.log
+
+# Временные файлы
+.DS_Store
+Thumbs.db
