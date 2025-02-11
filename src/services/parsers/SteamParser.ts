@@ -8,10 +8,10 @@ export class SteamParser implements IParser {
     return cheerio.load(data);
   }
 
-  async parseGame(url: string): Promise<Partial<IGame>> {
+  async parseGame(url: string): Promise<IGame> {
     const $ = await this.fetchPage(url);
 
-    const title = $('.apphub_AppName').text().trim();
+    const title = $('.apphub_AppName').first().text().trim();
     const price = this.processPrices($);
 
     const tags = $('.app_tag')
@@ -22,7 +22,8 @@ export class SteamParser implements IParser {
     return {
       title,
       url,
-      price,
+      basePrice: price.basePrice,
+      currentPrice: price.discount ?? price.basePrice,
       platform: 'steam',
       tags,
       lastChecked: new Date(),
@@ -47,18 +48,15 @@ export class SteamParser implements IParser {
 
       const originalPriceNum = this.priceStringToNumber(originalPrice);
       const discountPriceNum = this.priceStringToNumber(discountPrice);
-      const discountPercent = Math.round(
-        ((originalPriceNum - discountPriceNum) / originalPriceNum) * 100
-      );
 
       return {
-        price: discountPriceNum,
-        discount: discountPercent,
+        basePrice: originalPriceNum,
+        discount: discountPriceNum,
       };
     } else {
       const priceString = $('.game_purchase_price').first().text().trim();
       return {
-        price: this.priceStringToNumber(priceString),
+        basePrice: this.priceStringToNumber(priceString),
       };
     }
   }

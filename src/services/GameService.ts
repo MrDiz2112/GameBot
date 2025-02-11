@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { IGameService, IGame, IParser, GamePrice } from '../types';
+import { IGame, IGameService, IParser } from '../types';
 import logger from '../utils/logger';
 
 export class GameService implements IGameService {
@@ -17,28 +17,32 @@ export class GameService implements IGameService {
     try {
       const parsedGame = await this.parser.parseGame(gameData.url);
 
+      if (!parsedGame.title || !parsedGame.platform) {
+        throw new Error('Missing required game data');
+      }
+
+      const categories = gameData.categories || [];
+      const tags = parsedGame.tags || [];
+
       const game = await this.prisma.game.create({
         data: {
-          title: parsedGame.title!,
+          title: parsedGame.title,
           url: gameData.url,
-          price: (parsedGame.price as GamePrice).price,
-          currentPrice: (parsedGame.price as GamePrice).price,
-          platform: parsedGame.platform!,
+          basePrice: parsedGame.basePrice,
+          currentPrice: parsedGame.currentPrice,
+          platform: parsedGame.platform,
           lastChecked: new Date(),
-          onSale: (parsedGame.price as GamePrice).discount !== undefined,
           categories: {
-            connectOrCreate:
-              gameData.categories?.map(category => ({
-                where: { name: category },
-                create: { name: category },
-              })) || [],
+            connectOrCreate: categories.map(category => ({
+              where: { name: category },
+              create: { name: category },
+            })),
           },
           tags: {
-            connectOrCreate:
-              parsedGame.tags?.map(tag => ({
-                where: { name: tag },
-                create: { name: tag },
-              })) || [],
+            connectOrCreate: tags.map(tag => ({
+              where: { name: tag },
+              create: { name: tag },
+            })),
           },
         },
         include: {
@@ -51,6 +55,7 @@ export class GameService implements IGameService {
         id: game.id,
         title: game.title,
       });
+
       return this.mapGameToInterface(game);
     } catch (error) {
       logger.error('Failed to add game', { url: gameData.url, error });
@@ -146,16 +151,16 @@ export class GameService implements IGameService {
       await this.prisma.game.update({
         where: { id },
         data: {
-          currentPrice: priceInfo.price,
-          onSale: priceInfo.discount !== undefined,
+          currentPrice: priceInfo.discount ?? priceInfo.basePrice,
+          basePrice: priceInfo.basePrice,
           lastChecked: new Date(),
         },
       });
 
       logger.info('Game price updated successfully', {
         id,
-        oldPrice: game.currentPrice,
-        newPrice: priceInfo.price,
+        basePrice: priceInfo.basePrice,
+        currentPrice: priceInfo.discount ?? priceInfo.basePrice,
         discount: priceInfo.discount,
       });
     } catch (error) {
@@ -164,21 +169,27 @@ export class GameService implements IGameService {
     }
   }
 
-  private mapGameToInterface(game: any): IGame {
+  private mapGameToInterface(game: {
+    id: number;
+    title: string;
+    url: string;
+    basePrice: number;
+    currentPrice: number;
+    lastChecked: Date | null;
+    platform: string;
+    categories?: { name: string }[];
+    tags?: { name: string }[];
+  }): IGame {
     return {
       id: game.id,
       title: game.title,
       url: game.url,
-      price: {
-        price: game.currentPrice,
-        discount: game.onSale
-          ? Math.round(((game.price - game.currentPrice) / game.price) * 100)
-          : undefined,
-      },
-      lastChecked: game.lastChecked,
+      basePrice: game.basePrice,
+      currentPrice: game.currentPrice,
+      lastChecked: game.lastChecked ?? undefined,
       platform: game.platform,
-      categories: game.categories?.map((c: any) => c.name) || [],
-      tags: game.tags?.map((t: any) => t.name) || [],
+      categories: game.categories?.map(c => c.name) || [],
+      tags: game.tags?.map(t => t.name) || [],
     };
   }
 }

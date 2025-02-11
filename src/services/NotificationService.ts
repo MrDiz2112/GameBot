@@ -21,18 +21,18 @@ export class NotificationService {
       const data: Prisma.NotificationSettingsCreateInput = {
         chatId: BigInt(chatId),
         threadId: BigInt(threadId),
-        isGroup: true
+        isGroup: true,
       };
 
       await this.prisma.notificationSettings.upsert({
         where: {
           chatId_threadId: {
             chatId: BigInt(chatId),
-            threadId: BigInt(threadId)
-          }
+            threadId: BigInt(threadId),
+          },
         },
         update: {},
-        create: data
+        create: data,
       });
       logger.info('Notification thread set successfully', { chatId, threadId });
     } catch (error) {
@@ -48,9 +48,9 @@ export class NotificationService {
         where: {
           chatId_threadId: {
             chatId: BigInt(chatId),
-            threadId: BigInt(threadId)
-          }
-        }
+            threadId: BigInt(threadId),
+          },
+        },
       });
       logger.info('Notification settings removed successfully', { chatId, threadId });
     } catch (error) {
@@ -61,42 +61,52 @@ export class NotificationService {
 
   async checkPricesAndNotify(): Promise<void> {
     logger.debug('Starting price check and notification process');
+
     const games = await this.gameService.getGames();
     const settings = await this.prisma.notificationSettings.findMany();
+
     logger.info('Found games and notification settings', {
       gamesCount: games.length,
-      settingsCount: settings.length
+      settingsCount: settings.length,
     });
 
     for (const game of games) {
       try {
-        const oldPrice = game.currentPrice;
-        await this.gameService.updatePrice(game.id!);
+        const oldPrice = game.basePrice;
+        const oldCurrentPrice = game.currentPrice;
+
+        if (game.id) {
+          await this.gameService.updatePrice(game.id);
+        } else {
+          logger.warn('Game has no id', { game });
+          continue;
+        }
+
         const updatedGame = await this.prisma.game.findUnique({
-          where: { id: game.id }
+          where: { id: game.id },
         });
 
-        if (!updatedGame || !oldPrice || !updatedGame.currentPrice) {
+        if (!updatedGame || !oldPrice) {
           logger.warn('Skipping game due to missing data', { gameId: game.id });
           continue;
         }
 
-        // Если цена снизилась и игра не была помечена как со скидкой
-        if (updatedGame.currentPrice < oldPrice && !updatedGame.onSale) {
-          const discount = Math.round((1 - updatedGame.currentPrice / oldPrice) * 100);
+        // Если появилась новая скидка или скидка стала больше
+        const newCurrentPrice = updatedGame.currentPrice;
+
+        if (newCurrentPrice < oldCurrentPrice) {
           logger.info('Price drop detected', {
             gameId: game.id,
             title: updatedGame.title,
-            oldPrice,
+            oldPrice: oldPrice,
             newPrice: updatedGame.currentPrice,
-            discount
+            oldDiscount: oldCurrentPrice,
+            newDiscount: newCurrentPrice,
           });
 
           const message =
             `🎮 ${updatedGame.title}\n` +
-            `💰 Скидка ${discount}%!\n` +
-            `Старая цена: ${oldPrice}\n` +
-            `Новая цена: ${updatedGame.currentPrice}\n` +
+            `💰 Цена по скидке ${newCurrentPrice}%!\n` +
             `🔗 ${updatedGame.url}`;
 
           // Отправляем уведомление во все настроенные чаты/топики
@@ -104,11 +114,11 @@ export class NotificationService {
             try {
               if (setting.isGroup && setting.threadId) {
                 await this.bot.api.sendMessage(setting.chatId.toString(), message, {
-                  message_thread_id: Number(setting.threadId)
+                  message_thread_id: Number(setting.threadId),
                 });
                 logger.debug('Notification sent to group thread', {
                   chatId: setting.chatId,
-                  threadId: setting.threadId
+                  threadId: setting.threadId,
                 });
               } else {
                 await this.bot.api.sendMessage(setting.chatId.toString(), message);
@@ -118,52 +128,18 @@ export class NotificationService {
               logger.error('Failed to send notification', {
                 chatId: setting.chatId,
                 threadId: setting.threadId,
-                error
+                error,
               });
             }
           }
-
-          // Помечаем игру как со скидкой
-          await this.prisma.game.update({
-            where: { id: game.id },
-            data: { onSale: true }
-          });
-          logger.debug('Game marked as on sale', { gameId: game.id });
-        }
-        // Если цена вернулась к исходной или выше
-        else if (updatedGame.currentPrice >= oldPrice && updatedGame.onSale) {
-          await this.prisma.game.update({
-            where: { id: game.id },
-            data: { onSale: false }
-          });
-          logger.debug('Game marked as not on sale', { gameId: game.id });
         }
       } catch (error) {
         logger.error('Failed to check price for game', {
           gameId: game.id,
-          error
+          error,
         });
       }
     }
     logger.info('Price check and notification process completed');
-  }
-
-  async getNotificationSettings(chatId: number): Promise<any[]> {
-    logger.debug('Getting notification settings', { chatId });
-    try {
-      const settings = await this.prisma.notificationSettings.findMany({
-        where: {
-          chatId: BigInt(chatId)
-        }
-      });
-      logger.debug('Notification settings retrieved', {
-        chatId,
-        settingsCount: settings.length
-      });
-      return settings;
-    } catch (error) {
-      logger.error('Failed to get notification settings', { chatId, error });
-      throw error;
-    }
   }
 }

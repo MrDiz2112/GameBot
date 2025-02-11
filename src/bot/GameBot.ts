@@ -103,8 +103,8 @@ export class GameBot {
       const processingMsg = await ctx.reply('⏳ Обрабатываю ссылку...');
 
       try {
-        // Проверяем, что можем спарсить игру
         const parsedGame = await this.gameService.parser.parseGame(text);
+
         if (!parsedGame.title) {
           logger.warn('Failed to parse game title', { chatId, url: text });
           await ctx.reply(
@@ -145,6 +145,8 @@ export class GameBot {
           url: ctx.session.gameUrl,
           platform: 'steam',
           categories,
+          basePrice: 0,
+          currentPrice: 0,
           title: '', // Will be parsed
         };
 
@@ -204,7 +206,13 @@ export class GameBot {
     try {
       const games = await this.gameService.getGames();
       for (const game of games) {
-        await this.gameService.updatePrice(game.id!);
+        logger.info('Updating price for game', { id: game.id });
+
+        if (game.id) {
+          await this.gameService.updatePrice(game.id);
+        } else {
+          logger.warn('Game has no id', { game });
+        }
       }
       await ctx.reply('Цены успешно обновлены! Используйте /list чтобы увидеть актуальные цены.');
     } catch (error) {

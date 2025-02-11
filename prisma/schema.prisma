@@ -11,13 +11,12 @@ model Game {
   id           Int        @id @default(autoincrement())
   title        String
   url          String
-  price        Float // Оригинальная цена
+  basePrice    Float // Оригинальная цена
   currentPrice Float // Текущая цена (с учетом скидки)
   lastChecked  DateTime?
   platform     String // steam, epic, etc.
   categories   Category[]
   tags         Tag[]
-  onSale       Boolean    @default(false)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 }

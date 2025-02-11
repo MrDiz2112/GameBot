@@ -9,7 +9,7 @@ export interface SessionData {
 export type BotContext = Context & SessionFlavor<SessionData>;
 
 export interface GamePrice {
-  price: number;
+  basePrice: number;
   discount?: number;
 }
 
@@ -17,7 +17,8 @@ export interface IGame {
   id?: number;
   title: string;
   url: string;
-  price: GamePrice;
+  basePrice: number;
+  currentPrice: number;
   lastChecked?: Date;
   platform: string;
   categories?: string[];
@@ -34,6 +35,6 @@ export interface IGameService {
 }
 
 export interface IParser {
-  parseGame(url: string): Promise<Partial<IGame>>;
+  parseGame(url: string): Promise<IGame>;
   parsePrice(url: string): Promise<GamePrice>;
 }

@@ -21,12 +21,12 @@ if (!token) {
   process.exit(1);
 }
 
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', error => {
   logger.error('Необработанное исключение:', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Необработанное отклонение промиса:', { reason, promise });
+  logger.error('Необработанная ошибка:', { reason, promise });
 });
 
 const steamParser = new SteamParser();
