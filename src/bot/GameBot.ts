@@ -47,6 +47,37 @@ export class GameBot {
 
     // Handle URL input after /add command
     this.bot.on('message:text', this.handleMessage.bind(this));
+
+    this.bot.api.setMyCommands([
+      {
+        command: 'start',
+        description: 'Начать работу с ботом',
+      },
+      {
+        command: 'add',
+        description: 'Добавить новую игру',
+      },
+      {
+        command: 'list',
+        description: 'Показать список игр',
+      },
+      {
+        command: 'check_prices',
+        description: 'Проверить цены',
+      },
+      {
+        command: 'set_notifications',
+        description: 'Настроить уведомления о скидках в текущем топике',
+      },
+      {
+        command: 'remove_notifications',
+        description: 'Отключить уведомления в текущем топике',
+      },
+      {
+        command: 'help',
+        description: 'Показать помощь',
+      },
+    ]);
   }
 
   private setupPriceChecking(): void {
@@ -187,17 +218,16 @@ export class GameBot {
       const message = games
         .map(game => {
           return (
-            `🎮 ${game.title}\n` +
-            `💰 Цена: ${game.currentPrice || 'Н/Д'}\n` +
-            `🏷 Категории: ${game.categories?.join(', ') || 'Н/Д'}\n` +
-            `🔖 Теги: ${game.tags?.join(', ') || 'Н/Д'}\n` +
-            `🔗 ${game.url}\n`
+            `🎮 [${game.title}](${game.url})\n` +
+            `💰 Цена: ${game.basePrice > game.currentPrice ? `~${game.basePrice}~ ` : ''}${game.currentPrice || 'Н/Д'} руб\\.\n` +
+            `🏷 Категории: ${(game.categories?.join(', ') || 'Н/Д').replace(/[.-]/g, '\\$&')}\n`
           );
         })
-        .join('\n');
+        .join('\n\n');
 
-      await ctx.reply(message);
+      await ctx.reply(message, { parse_mode: 'MarkdownV2' });
     } catch (error) {
+      logger.error('Error getting game list', { error });
       await ctx.reply('Произошла ошибка при получении списка игр');
     }
   }
