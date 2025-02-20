@@ -1,4 +1,4 @@
-import { Bot, Context, session, SessionFlavor, Keyboard } from 'grammy';
+import { Bot, Context, session, SessionFlavor, InlineKeyboard } from 'grammy';
 import { IGameService, IGame } from '../types';
 import { NotificationService } from '../services/NotificationService';
 import logger from '../utils/logger';
@@ -48,9 +48,78 @@ export class GameBot {
     this.bot.command('help', this.handleHelp.bind(this));
     this.bot.command('set_notifications', this.handleSetNotifications.bind(this));
     this.bot.command('remove_notifications', this.handleRemoveNotifications.bind(this));
+    this.bot.command('categories', this.handleCategories.bind(this));
+    this.bot.command('add_category', this.handleAddCategory.bind(this));
 
     // Handle URL input after /add command
     this.bot.on('message:text', this.handleMessage.bind(this));
+
+    // Добавляем обработчик для inline кнопок категорий
+    this.bot.callbackQuery(/^category:(.+)$/, async ctx => {
+      if (!ctx.match[1]) return;
+
+      const category = ctx.match[1];
+      const chatId = ctx.chat?.id;
+
+      if (!chatId || !ctx.session.gameUrl || !ctx.session.awaitingCategories) {
+        await ctx.answerCallbackQuery({
+          text: '❌ Ошибка: сессия выбора категории не активна',
+          show_alert: true,
+        });
+        return;
+      }
+
+      const processingMsg = await ctx.reply('⏳ Добавляю игру...');
+
+      try {
+        const game: IGame = {
+          url: ctx.session.gameUrl,
+          platform: 'steam',
+          category: category,
+          players: ctx.session.players || 1,
+          basePrice: 0,
+          currentPrice: 0,
+          title: '', // Will be parsed
+        };
+
+        await this.gameService.addGame(game);
+
+        // Удаляем клавиатуру
+        await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+
+        await ctx.answerCallbackQuery({
+          text: '✅ Категория выбрана',
+        });
+
+        if (processingMsg.message_id) {
+          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
+        }
+
+        await ctx.reply('✅ Игра успешно добавлена!');
+
+        // Очищаем сессию
+        ctx.session.gameUrl = undefined;
+        ctx.session.category = undefined;
+        ctx.session.awaitingCategories = false;
+        ctx.session.players = undefined;
+        ctx.session.awaitingPlayers = false;
+      } catch (error) {
+        logger.error('Error adding game with category', {
+          chatId,
+          category,
+          error,
+        });
+
+        await ctx.answerCallbackQuery({
+          text: '❌ Произошла ошибка при добавлении игры',
+          show_alert: true,
+        });
+
+        if (processingMsg.message_id) {
+          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
+        }
+      }
+    });
 
     this.bot.api.setMyCommands([
       {
@@ -68,6 +137,14 @@ export class GameBot {
       {
         command: 'check_prices',
         description: 'Проверить цены',
+      },
+      {
+        command: 'categories',
+        description: 'Показать список категорий и количество игр в них',
+      },
+      {
+        command: 'add_category',
+        description: 'Добавить новую категорию',
       },
       {
         command: 'set_notifications',
@@ -104,6 +181,8 @@ export class GameBot {
         '/add - Добавить новую игру\n' +
         '/list - Показать список игр\n' +
         '/check_prices - Проверить цены\n' +
+        '/categories - Показать список категорий и количество игр\n' +
+        '/add_category - Добавить новую категорию\n' +
         '/set_notifications - Настроить уведомления о скидках в текущем топике\n' +
         '/remove_notifications - Отключить уведомления в текущем топике\n' +
         '/help - Показать помощь'
@@ -192,7 +271,7 @@ export class GameBot {
       // Получаем все существующие категории из базы данных
       try {
         const categories = await this.gameService.getCategories();
-        const keyboard = new Keyboard();
+        const keyboard = new InlineKeyboard();
 
         // Добавляем кнопки с категориями по 2 в ряд
         for (let i = 0; i < categories.length; i += 2) {
@@ -200,9 +279,9 @@ export class GameBot {
           if (i + 1 < categories.length) {
             row.push(categories[i + 1]);
           }
-          keyboard.text(row[0]);
+          keyboard.text(row[0], `category:${row[0]}`);
           if (row.length > 1) {
-            keyboard.text(row[1]);
+            keyboard.text(row[1], `category:${row[1]}`);
           }
           keyboard.row();
         }
@@ -240,9 +319,7 @@ export class GameBot {
         });
 
         await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        await ctx.reply('✅ Игра успешно добавлена!', {
-          reply_markup: { remove_keyboard: true },
-        });
+        await ctx.reply('✅ Игра успешно добавлена!');
       } catch (error) {
         logger.error('Error adding game', {
           chatId,
@@ -367,6 +444,8 @@ export class GameBot {
         '/add - Добавить новую игру\n' +
         '/list - Показать список игр\n' +
         '/check_prices - Проверить цены\n' +
+        '/categories - Показать список категорий и количество игр\n' +
+        '/add_category - Добавить новую категорию\n' +
         '/set_notifications - Настроить уведомления о скидках в текущем топике\n' +
         '/remove_notifications - Отключить уведомления в текущем топике\n' +
         '/help - Показать это сообщение\n\n' +
@@ -374,11 +453,87 @@ export class GameBot {
         '1. Используйте команду /add\n' +
         '2. Отправьте ссылку на игру в Steam\n' +
         '3. Укажите количество игроков (по умолчанию: 1)\n' +
-        '4. Укажите категорию игры'
+        '4. Укажите категорию игры\n\n' +
+        'Для работы с категориями:\n' +
+        '1. /categories - посмотреть все категории и количество игр в них\n' +
+        '2. /add_category <название> - создать новую категорию'
       : 'Для использования бота добавьте меня в группу с топиками.\n' +
         'Там вы сможете настроить уведомления о скидках в нужном топике.';
 
     await ctx.reply(message);
+  }
+
+  private async handleCategories(ctx: BotContext): Promise<void> {
+    logger.debug('Handling /categories command', { chatId: ctx.chat?.id });
+    const processingMsg = await ctx.reply('⏳ Получаю список категорий...');
+
+    try {
+      const categories = await this.gameService.getCategoriesWithGameCount();
+
+      if (categories.length === 0) {
+        await ctx.reply('📝 Список категорий пуст');
+        return;
+      }
+
+      const message = categories
+        .map((cat: { name: string; gamesCount: number }) => `📁 ${cat.name}: ${cat.gamesCount} игр`)
+        .join('\n');
+
+      logger.info('Categories list retrieved successfully', {
+        chatId: ctx.chat?.id,
+        categoriesCount: categories.length,
+      });
+
+      if (ctx.chat?.id) {
+        await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
+      }
+      await ctx.reply(`📊 Категории:\n\n${message}`);
+    } catch (error) {
+      logger.error('Error getting categories list', {
+        chatId: ctx.chat?.id,
+        error,
+      });
+      if (ctx.chat?.id) {
+        await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
+      }
+      await ctx.reply('❌ Произошла ошибка при получении списка категорий');
+    }
+  }
+
+  private async handleAddCategory(ctx: BotContext): Promise<void> {
+    logger.debug('Handling /add_category command', { chatId: ctx.chat?.id });
+
+    const categoryName = ctx.match;
+    if (!categoryName) {
+      await ctx.reply('Пожалуйста, используйте формат: /add_category <название категории>');
+      return;
+    }
+
+    const processingMsg = await ctx.reply('⏳ Добавляю категорию...');
+
+    try {
+      const category = await this.gameService.createCategory(categoryName.toString());
+
+      logger.info('Category added successfully', {
+        chatId: ctx.chat?.id,
+        categoryName: category.name,
+      });
+
+      if (ctx.chat?.id) {
+        await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
+      }
+      await ctx.reply(`✅ Категория "${category.name}" успешно добавлена!`);
+    } catch (error) {
+      logger.error('Error adding category', {
+        chatId: ctx.chat?.id,
+        categoryName,
+        error,
+      });
+      if (ctx.chat?.id) {
+        await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
+      }
+      await ctx.reply('❌ Произошла ошибка при добавлении категории');
+    }
   }
 
   public start(): void {

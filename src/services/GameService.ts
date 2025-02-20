@@ -196,6 +196,48 @@ export class GameService implements IGameService {
     }
   }
 
+  async getCategoriesWithGameCount(): Promise<Array<{ name: string; gamesCount: number }>> {
+    logger.debug('Getting categories with game count');
+    try {
+      const categoriesWithCount = await this.prisma.category.findMany({
+        select: {
+          name: true,
+          _count: {
+            select: {
+              games: true,
+            },
+          },
+        },
+      });
+
+      const result = categoriesWithCount.map(category => ({
+        name: category.name,
+        gamesCount: category._count.games,
+      }));
+
+      logger.info('Categories with count retrieved successfully', { count: result.length });
+      return result;
+    } catch (error) {
+      logger.error('Failed to get categories with count', { error });
+      throw error;
+    }
+  }
+
+  async createCategory(name: string): Promise<{ id: number; name: string }> {
+    logger.debug('Creating new category', { name });
+    try {
+      const category = await this.prisma.category.create({
+        data: { name },
+      });
+
+      logger.info('Category created successfully', { id: category.id, name: category.name });
+      return category;
+    } catch (error) {
+      logger.error('Failed to create category', { name, error });
+      throw error;
+    }
+  }
+
   private mapGameToInterface(game: {
     id: number;
     title: string;
