@@ -13,15 +13,28 @@ export class GameService implements IGameService {
   }
 
   async addGame(gameData: IGame): Promise<IGame> {
-    logger.debug('Adding new game', { url: gameData.url });
+    logger.debug('Adding new game with data', {
+      gameData,
+      url: gameData.url,
+      players: gameData.players,
+      category: gameData.category,
+    });
     try {
       const parsedGame = await this.parser.parseGame(gameData.url);
+      logger.debug('Parsed game data', { parsedGame });
 
       if (!parsedGame.title || !parsedGame.platform) {
         throw new Error('Missing required game data');
       }
 
-      const { category, id: _id, tags: _tags, ...restGameData } = gameData;
+      const { category, id: _id, tags: _tags, players, ...restGameData } = gameData;
+      logger.debug('Destructured game data', {
+        category,
+        players,
+        restGameData,
+        tags: _tags,
+      });
+
       const tags = parsedGame.tags || [];
 
       let categoryId: number | undefined;
@@ -32,25 +45,29 @@ export class GameService implements IGameService {
           update: {},
         });
         categoryId = categoryRecord.id;
+        logger.debug('Category record created/updated', { categoryRecord });
       }
 
-      const game = await this.prisma.game.create({
-        data: {
-          title: parsedGame.title,
-          url: restGameData.url,
-          basePrice: parsedGame.basePrice,
-          currentPrice: parsedGame.currentPrice,
-          players: restGameData.players || 1,
-          platform: parsedGame.platform,
-          lastChecked: new Date(),
-          categoryId,
-          tags: {
-            connectOrCreate: tags.map((tag: string) => ({
-              where: { name: tag },
-              create: { name: tag },
-            })),
-          },
+      const prismaData = {
+        title: parsedGame.title,
+        url: restGameData.url,
+        basePrice: parsedGame.basePrice || gameData.basePrice || 0,
+        currentPrice: parsedGame.currentPrice || gameData.currentPrice || 0,
+        players: players ? Number(players) : 1,
+        platform: parsedGame.platform,
+        lastChecked: new Date(),
+        categoryId,
+        tags: {
+          connectOrCreate: tags.map((tag: string) => ({
+            where: { name: tag },
+            create: { name: tag },
+          })),
         },
+      };
+      logger.debug('Preparing Prisma create data', { prismaData });
+
+      const game = await this.prisma.game.create({
+        data: prismaData,
         include: {
           category: true,
           tags: true,
@@ -60,11 +77,25 @@ export class GameService implements IGameService {
       logger.info('Game added successfully', {
         id: game.id,
         title: game.title,
+        players: game.players,
+        category: game.category?.name,
+        tags: game.tags.map(t => t.name),
       });
 
       return this.mapGameToInterface(game);
     } catch (error) {
-      logger.error('Failed to add game', { url: gameData.url, error });
+      logger.error('Failed to add game', {
+        url: gameData.url,
+        error:
+          error instanceof Error
+            ? {
+                message: error.message,
+                name: error.name,
+                stack: error.stack,
+              }
+            : error,
+        gameData,
+      });
       throw error;
     }
   }
