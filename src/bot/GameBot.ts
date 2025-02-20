@@ -347,18 +347,39 @@ export class GameBot {
         return;
       }
 
-      const message = games
-        .map(game => {
-          return (
-            `🎮 [${game.title}](${game.url})\n` +
-            `💰 Цена: ${game.basePrice > game.currentPrice ? `~${game.basePrice}~ ` : ''}${game.currentPrice || 'Н/Д'} руб\\.\n` +
-            `👥 Игроков: ${game.players}\n` +
-            `🏷 Категория: ${game.category || 'Н/Д'}\n`
-          );
+      // Группируем игры по категориям
+      const gamesByCategory = games.reduce(
+        (acc, game) => {
+          const category = game.category || 'Без категории';
+          if (!acc[category]) {
+            acc[category] = [];
+          }
+          acc[category].push(game);
+          return acc;
+        },
+        {} as Record<string, typeof games>
+      );
+
+      // Формируем сообщение
+      const message = Object.entries(gamesByCategory)
+        .map(([category, categoryGames]) => {
+          const header = `*__${category}__*\n\n`;
+          const gamesList = categoryGames
+            .map(game => {
+              const name = `[${game.title}](${game.url})`;
+              const price = `${game.basePrice > game.currentPrice ? `~${game.basePrice}~ ` : ''}${game.currentPrice || 'Н/Д'} руб\\.`;
+              const players = `${game.players} чел\\.`;
+              return `\\- ${name} \\(${players}\\) \\- ${price}`;
+            })
+            .join('\n');
+          return `${header}${gamesList}`;
         })
         .join('\n\n');
 
-      await ctx.reply(message, { parse_mode: 'MarkdownV2' });
+      await ctx.reply(message, {
+        parse_mode: 'MarkdownV2',
+        link_preview_options: { is_disabled: true },
+      });
     } catch (error) {
       logger.error('Error getting game list', { error });
       await ctx.reply('Произошла ошибка при получении списка игр');
