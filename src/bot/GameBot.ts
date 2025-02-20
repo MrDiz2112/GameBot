@@ -54,8 +54,8 @@ export class GameBot {
         description: 'Начать работу с ботом',
       },
       {
-        command: 'add',
-        description: 'Добавить новую игру',
+        command: 'add <url>',
+        description: 'Добавить новую игру: /add <ссылка>',
       },
       {
         command: 'list',
@@ -112,10 +112,56 @@ export class GameBot {
 
   private async handleAdd(ctx: BotContext): Promise<void> {
     logger.debug('Handling /add command', { chatId: ctx.chat?.id });
-    ctx.session.gameUrl = undefined;
-    ctx.session.categories = undefined;
-    ctx.session.awaitingCategories = false;
-    await ctx.reply('Пожалуйста, отправьте ссылку на игру в Steam');
+
+    const url = ctx.match;
+    if (!url) {
+      await ctx.reply('Пожалуйста, используйте формат: /add <ссылка на игру в Steam>');
+      return;
+    }
+
+    if (!url.toString().includes('store.steampowered.com')) {
+      await ctx.reply('Пожалуйста, предоставьте корректную ссылку на игру в Steam');
+      return;
+    }
+
+    const processingMsg = await ctx.reply('⏳ Обрабатываю ссылку...');
+
+    try {
+      const parsedGame = await this.gameService.parser.parseGame(url.toString());
+
+      if (!parsedGame.title) {
+        logger.warn('Failed to parse game title', { chatId: ctx.chat?.id, url });
+        await ctx.reply(
+          '❌ Не удалось получить информацию об игре. Проверьте ссылку и попробуйте снова.'
+        );
+        if (ctx.chat?.id) {
+          await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
+        }
+        return;
+      }
+
+      ctx.session.gameUrl = url.toString();
+      ctx.session.awaitingCategories = true;
+      logger.info('Successfully parsed game', {
+        chatId: ctx.chat?.id,
+        url,
+        title: parsedGame.title,
+      });
+
+      if (ctx.chat?.id) {
+        await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
+      }
+      await ctx.reply(
+        `✅ Игра найдена: ${parsedGame.title}\n` +
+          'Теперь укажите категории игры через запятую (например: Action, RPG, Multiplayer)'
+      );
+    } catch (error) {
+      logger.error('Error processing Steam URL', { chatId: ctx.chat?.id, url, error });
+      if (ctx.chat?.id) {
+        await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
+      }
+      await ctx.reply('❌ Произошла ошибка при обработке ссылки. Попробуйте позже.');
+    }
   }
 
   private async handleMessage(ctx: BotContext): Promise<void> {
@@ -128,43 +174,6 @@ export class GameBot {
     }
 
     logger.debug('Processing message', { chatId, text: text.substring(0, 50) });
-
-    if (!ctx.session.gameUrl && text.includes('store.steampowered.com')) {
-      logger.info('Received Steam URL', { chatId, url: text });
-      const processingMsg = await ctx.reply('⏳ Обрабатываю ссылку...');
-
-      try {
-        const parsedGame = await this.gameService.parser.parseGame(text);
-
-        if (!parsedGame.title) {
-          logger.warn('Failed to parse game title', { chatId, url: text });
-          await ctx.reply(
-            '❌ Не удалось получить информацию об игре. Проверьте ссылку и попробуйте снова.'
-          );
-          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-          return;
-        }
-
-        ctx.session.gameUrl = text;
-        ctx.session.awaitingCategories = true;
-        logger.info('Successfully parsed game', {
-          chatId,
-          url: text,
-          title: parsedGame.title,
-        });
-
-        await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        await ctx.reply(
-          `✅ Игра найдена: ${parsedGame.title}\n` +
-            'Теперь укажите категории игры через запятую (например: Action, RPG, Multiplayer)'
-        );
-      } catch (error) {
-        logger.error('Error processing Steam URL', { chatId, url: text, error });
-        await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        await ctx.reply('❌ Произошла ошибка при обработке ссылки. Попробуйте позже.');
-      }
-      return;
-    }
 
     if (ctx.session.gameUrl && ctx.session.awaitingCategories) {
       logger.info('Processing categories', { chatId, categories: text });
