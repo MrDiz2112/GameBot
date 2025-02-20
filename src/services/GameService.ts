@@ -21,32 +21,38 @@ export class GameService implements IGameService {
         throw new Error('Missing required game data');
       }
 
-      const categories = gameData.categories || [];
+      const { category, id: _id, tags: _tags, ...restGameData } = gameData;
       const tags = parsedGame.tags || [];
+
+      let categoryId: number | undefined;
+      if (category) {
+        const categoryRecord = await this.prisma.category.upsert({
+          where: { name: category },
+          create: { name: category },
+          update: {},
+        });
+        categoryId = categoryRecord.id;
+      }
 
       const game = await this.prisma.game.create({
         data: {
           title: parsedGame.title,
-          url: gameData.url,
+          url: restGameData.url,
           basePrice: parsedGame.basePrice,
           currentPrice: parsedGame.currentPrice,
+          players: restGameData.players || 1,
           platform: parsedGame.platform,
           lastChecked: new Date(),
-          categories: {
-            connectOrCreate: categories.map(category => ({
-              where: { name: category },
-              create: { name: category },
-            })),
-          },
+          categoryId,
           tags: {
-            connectOrCreate: tags.map(tag => ({
+            connectOrCreate: tags.map((tag: string) => ({
               where: { name: tag },
               create: { name: tag },
             })),
           },
         },
         include: {
-          categories: true,
+          category: true,
           tags: true,
         },
       });
@@ -79,23 +85,27 @@ export class GameService implements IGameService {
   async updateGame(id: number, gameData: Partial<IGame>): Promise<IGame> {
     logger.debug('Updating game', { id, data: gameData });
     try {
+      let categoryId: number | undefined;
+      if (gameData.category) {
+        const categoryRecord = await this.prisma.category.upsert({
+          where: { name: gameData.category },
+          create: { name: gameData.category },
+          update: {},
+        });
+        categoryId = categoryRecord.id;
+      }
+
+      const { category: _category, id: _id, tags: _tags, ...prismaUpdateData } = gameData;
+
       const game = await this.prisma.game.update({
         where: { id },
         data: {
-          ...gameData,
-          categories: gameData.categories
-            ? {
-                set: [],
-                connectOrCreate: gameData.categories.map(category => ({
-                  where: { name: category },
-                  create: { name: category },
-                })),
-              }
-            : undefined,
+          ...prismaUpdateData,
+          categoryId,
           tags: gameData.tags
             ? {
                 set: [],
-                connectOrCreate: gameData.tags.map(tag => ({
+                connectOrCreate: gameData.tags.map((tag: string) => ({
                   where: { name: tag },
                   create: { name: tag },
                 })),
@@ -103,7 +113,7 @@ export class GameService implements IGameService {
             : undefined,
         },
         include: {
-          categories: true,
+          category: true,
           tags: true,
         },
       });
@@ -121,7 +131,7 @@ export class GameService implements IGameService {
     try {
       const games = await this.prisma.game.findMany({
         include: {
-          categories: true,
+          category: true,
           tags: true,
         },
       });
@@ -130,6 +140,23 @@ export class GameService implements IGameService {
       return games.map(this.mapGameToInterface);
     } catch (error) {
       logger.error('Failed to get games', { error });
+      throw error;
+    }
+  }
+
+  async getCategories(): Promise<string[]> {
+    logger.debug('Getting all categories');
+    try {
+      const categories = await this.prisma.category.findMany({
+        select: {
+          name: true,
+        },
+      });
+
+      logger.info('Categories retrieved successfully', { count: categories.length });
+      return categories.map(c => c.name);
+    } catch (error) {
+      logger.error('Failed to get categories', { error });
       throw error;
     }
   }
@@ -173,22 +200,24 @@ export class GameService implements IGameService {
     id: number;
     title: string;
     url: string;
+    players: number;
     basePrice: number;
     currentPrice: number;
     lastChecked: Date | null;
     platform: string;
-    categories?: { name: string }[];
+    category?: { name: string } | null;
     tags?: { name: string }[];
   }): IGame {
     return {
       id: game.id,
       title: game.title,
       url: game.url,
+      players: game.players,
       basePrice: game.basePrice,
       currentPrice: game.currentPrice,
       lastChecked: game.lastChecked ?? undefined,
       platform: game.platform,
-      categories: game.categories?.map(c => c.name) || [],
+      category: game.category?.name,
       tags: game.tags?.map(t => t.name) || [],
     };
   }

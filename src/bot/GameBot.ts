@@ -1,12 +1,14 @@
-import { Bot, Context, session, SessionFlavor } from 'grammy';
+import { Bot, Context, session, SessionFlavor, Keyboard } from 'grammy';
 import { IGameService, IGame } from '../types';
 import { NotificationService } from '../services/NotificationService';
 import logger from '../utils/logger';
 
 interface SessionData {
   gameUrl?: string;
-  categories?: string[];
+  category?: string;
   awaitingCategories?: boolean;
+  awaitingPlayers?: boolean;
+  players?: number;
 }
 
 type BotContext = Context & SessionFlavor<SessionData>;
@@ -25,8 +27,10 @@ export class GameBot {
       session({
         initial: (): SessionData => ({
           gameUrl: undefined,
-          categories: undefined,
+          category: undefined,
           awaitingCategories: false,
+          awaitingPlayers: false,
+          players: undefined,
         }),
       })
     );
@@ -54,8 +58,8 @@ export class GameBot {
         description: 'Начать работу с ботом',
       },
       {
-        command: 'add <url>',
-        description: 'Добавить новую игру: /add <ссылка>',
+        command: 'add',
+        description: 'Добавить новую игру',
       },
       {
         command: 'list',
@@ -141,7 +145,7 @@ export class GameBot {
       }
 
       ctx.session.gameUrl = url.toString();
-      ctx.session.awaitingCategories = true;
+      ctx.session.awaitingPlayers = true;
       logger.info('Successfully parsed game', {
         chatId: ctx.chat?.id,
         url,
@@ -152,8 +156,7 @@ export class GameBot {
         await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
       }
       await ctx.reply(
-        `✅ Игра найдена: ${parsedGame.title}\n` +
-          'Теперь укажите категории игры через запятую (например: Action, RPG, Multiplayer)'
+        `✅ Игра найдена: ${parsedGame.title}\n` + 'Укажите количество игроков (по умолчанию: 1)'
       );
     } catch (error) {
       logger.error('Error processing Steam URL', { chatId: ctx.chat?.id, url, error });
@@ -175,35 +178,76 @@ export class GameBot {
 
     logger.debug('Processing message', { chatId, text: text.substring(0, 50) });
 
+    if (ctx.session.gameUrl && ctx.session.awaitingPlayers) {
+      const players = parseInt(text);
+      if (isNaN(players) || players < 1) {
+        await ctx.reply('Пожалуйста, укажите корректное количество игроков (целое число больше 0)');
+        return;
+      }
+
+      ctx.session.players = players;
+      ctx.session.awaitingPlayers = false;
+      ctx.session.awaitingCategories = true;
+
+      // Получаем все существующие категории из базы данных
+      try {
+        const categories = await this.gameService.getCategories();
+        const keyboard = new Keyboard();
+
+        // Добавляем кнопки с категориями по 2 в ряд
+        for (let i = 0; i < categories.length; i += 2) {
+          const row = [categories[i]];
+          if (i + 1 < categories.length) {
+            row.push(categories[i + 1]);
+          }
+          keyboard.text(row[0]);
+          if (row.length > 1) {
+            keyboard.text(row[1]);
+          }
+          keyboard.row();
+        }
+
+        await ctx.reply('Выберите категорию игры:', { reply_markup: keyboard });
+      } catch (error) {
+        logger.error('Error getting categories', { error });
+        await ctx.reply('Произошла ошибка при получении списка категорий');
+      }
+      return;
+    }
+
     if (ctx.session.gameUrl && ctx.session.awaitingCategories) {
-      logger.info('Processing categories', { chatId, categories: text });
+      logger.info('Processing category', { chatId, category: text });
       const processingMsg = await ctx.reply('⏳ Добавляю игру...');
 
       try {
-        const categories = text.split(',').map(c => c.trim());
         const game: IGame = {
           url: ctx.session.gameUrl,
           platform: 'steam',
-          categories,
+          category: text,
+          players: ctx.session.players || 1,
           basePrice: 0,
           currentPrice: 0,
           title: '', // Will be parsed
         };
 
+        logger.debug('Adding game with data', { game });
         await this.gameService.addGame(game);
         logger.info('Game successfully added', {
           chatId,
           url: ctx.session.gameUrl,
-          categories,
+          category: text,
+          players: ctx.session.players,
         });
 
         await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        await ctx.reply('✅ Игра успешно добавлена!');
+        await ctx.reply('✅ Игра успешно добавлена!', {
+          reply_markup: { remove_keyboard: true },
+        });
       } catch (error) {
         logger.error('Error adding game', {
           chatId,
           url: ctx.session.gameUrl,
-          categories: text,
+          category: text,
           error,
         });
         await ctx.api.deleteMessage(chatId, processingMsg.message_id);
@@ -211,8 +255,10 @@ export class GameBot {
       }
 
       ctx.session.gameUrl = undefined;
-      ctx.session.categories = undefined;
+      ctx.session.category = undefined;
       ctx.session.awaitingCategories = false;
+      ctx.session.players = undefined;
+      ctx.session.awaitingPlayers = false;
     }
   }
 
@@ -229,7 +275,8 @@ export class GameBot {
           return (
             `🎮 [${game.title}](${game.url})\n` +
             `💰 Цена: ${game.basePrice > game.currentPrice ? `~${game.basePrice}~ ` : ''}${game.currentPrice || 'Н/Д'} руб\\.\n` +
-            `🏷 Категории: ${(game.categories?.join(', ') || 'Н/Д').replace(/[.-]/g, '\\$&')}\n`
+            `👥 Игроков: ${game.players}\n` +
+            `🏷 Категория: ${game.category || 'Н/Д'}\n`
           );
         })
         .join('\n\n');
@@ -326,7 +373,8 @@ export class GameBot {
         'Для добавления игры:\n' +
         '1. Используйте команду /add\n' +
         '2. Отправьте ссылку на игру в Steam\n' +
-        '3. Укажите категории игры через запятую'
+        '3. Укажите количество игроков (по умолчанию: 1)\n' +
+        '4. Укажите категорию игры'
       : 'Для использования бота добавьте меня в группу с топиками.\n' +
         'Там вы сможете настроить уведомления о скидках в нужном топике.';
 

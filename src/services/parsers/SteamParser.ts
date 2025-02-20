@@ -27,6 +27,7 @@ export class SteamParser implements IParser {
       platform: 'steam',
       tags,
       lastChecked: new Date(),
+      players: 1,
     };
   }
 

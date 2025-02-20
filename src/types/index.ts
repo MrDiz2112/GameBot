@@ -21,7 +21,8 @@ export interface IGame {
   currentPrice: number;
   lastChecked?: Date;
   platform: string;
-  categories?: string[];
+  players: number;
+  category?: string;
   tags?: string[];
 }
 
@@ -32,6 +33,7 @@ export interface IGameService {
   updateGame(id: number, game: Partial<IGame>): Promise<IGame>;
   getGames(): Promise<IGame[]>;
   updatePrice(id: number): Promise<void>;
+  getCategories(): Promise<string[]>;
 }
 
 export interface IParser {
