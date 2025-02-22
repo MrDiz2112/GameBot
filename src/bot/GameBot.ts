@@ -12,6 +12,7 @@ interface SessionData {
   awaitingGameUrl?: boolean;
   userId?: number;
   step?: 'url' | 'players' | 'category' | null;
+  messageIdsToDelete?: number[];
 }
 
 type BotContext = Context & SessionFlavor<SessionData>;
@@ -20,6 +21,20 @@ export class GameBot {
   private bot: Bot<BotContext>;
   private gameService: IGameService;
   private notificationService: NotificationService;
+
+  private async deleteMessages(ctx: BotContext): Promise<void> {
+    const chatId = ctx.chat?.id;
+    if (!chatId || !ctx.session.messageIdsToDelete?.length) return;
+
+    for (const messageId of ctx.session.messageIdsToDelete) {
+      try {
+        await ctx.api.deleteMessage(chatId, messageId);
+      } catch (error) {
+        logger.warn('Failed to delete message', { messageId, error });
+      }
+    }
+    ctx.session.messageIdsToDelete = [];
+  }
 
   constructor(token: string, gameService: IGameService) {
     this.bot = new Bot<BotContext>(token);
@@ -37,6 +52,7 @@ export class GameBot {
           awaitingGameUrl: false,
           userId: undefined,
           step: null,
+          messageIdsToDelete: [],
         }),
       })
     );
@@ -82,7 +98,11 @@ export class GameBot {
         return;
       }
 
+      // Удаляем предыдущие сообщения
+      await this.deleteMessages(ctx);
+
       const processingMsg = await ctx.reply('⏳ Добавляю игру...');
+      ctx.session.messageIdsToDelete = [processingMsg.message_id];
 
       try {
         const game: IGame = {
@@ -97,16 +117,12 @@ export class GameBot {
 
         await this.gameService.addGame(game);
 
-        // Удаляем клавиатуру
-        await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+        // Удаляем все сообщения из сессии
+        await this.deleteMessages(ctx);
 
         await ctx.answerCallbackQuery({
           text: '✅ Категория выбрана',
         });
-
-        if (processingMsg.message_id) {
-          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        }
 
         await ctx.reply('✅ Игра успешно добавлена!');
 
@@ -119,6 +135,7 @@ export class GameBot {
         ctx.session.awaitingGameUrl = false;
         ctx.session.userId = undefined;
         ctx.session.step = null;
+        ctx.session.messageIdsToDelete = [];
       } catch (error) {
         logger.error('Error adding game with category', {
           chatId,
@@ -126,14 +143,26 @@ export class GameBot {
           error,
         });
 
+        // Удаляем все сообщения из сессии
+        await this.deleteMessages(ctx);
+
         await ctx.answerCallbackQuery({
           text: '❌ Произошла ошибка при добавлении игры',
           show_alert: true,
         });
 
-        if (processingMsg.message_id) {
-          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        }
+        await ctx.reply('❌ Произошла ошибка при добавлении игры');
+
+        // Очищаем сессию
+        ctx.session.gameUrl = undefined;
+        ctx.session.category = undefined;
+        ctx.session.awaitingCategories = false;
+        ctx.session.players = undefined;
+        ctx.session.awaitingPlayers = false;
+        ctx.session.awaitingGameUrl = false;
+        ctx.session.userId = undefined;
+        ctx.session.step = null;
+        ctx.session.messageIdsToDelete = [];
       }
     });
 
@@ -221,6 +250,14 @@ export class GameBot {
       return;
     }
 
+    // Инициализируем массив для хранения ID сообщений
+    ctx.session.messageIdsToDelete = [];
+
+    // Сохраняем ID команды /add
+    if (ctx.message?.message_id) {
+      ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+    }
+
     // Инициализируем сессию для пошагового добавления
     ctx.session.userId = ctx.from.id;
     ctx.session.step = 'url';
@@ -233,9 +270,15 @@ export class GameBot {
     ctx.session.awaitingCategories = false;
     ctx.session.awaitingPlayers = false;
 
-    await ctx.reply('Пожалуйста, отправьте ссылку на игру в Steam', {
+    const message = await ctx.reply('Пожалуйста, отправьте ссылку на игру в Steam', {
       message_thread_id: ctx.message?.message_thread_id,
     });
+
+    // Сохраняем ID сообщения бота
+    ctx.session.messageIdsToDelete = [message.message_id];
+    if (ctx.message?.message_id) {
+      ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+    }
   }
 
   private async handleMessage(ctx: BotContext): Promise<void> {
@@ -249,6 +292,12 @@ export class GameBot {
       return;
     }
 
+    // Сохраняем ID сообщения пользователя
+    if (ctx.message?.message_id) {
+      ctx.session.messageIdsToDelete = ctx.session.messageIdsToDelete || [];
+      ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+    }
+
     logger.debug('Processing message', { chatId, text: text.substring(0, 50) });
 
     // Проверяем, что сообщение от того же пользователя, который начал процесс
@@ -259,30 +308,48 @@ export class GameBot {
     // Обработка URL
     if (ctx.session.step === 'url' && ctx.session.awaitingGameUrl) {
       if (!text.includes('store.steampowered.com')) {
-        await ctx.reply('Пожалуйста, предоставьте корректную ссылку на игру в Steam', {
-          message_thread_id: threadId,
-        });
+        // Удаляем предыдущие сообщения
+        await this.deleteMessages(ctx);
+
+        const errorMsg = await ctx.reply(
+          'Пожалуйста, предоставьте корректную ссылку на игру в Steam',
+          {
+            message_thread_id: threadId,
+          }
+        );
+        ctx.session.messageIdsToDelete = [errorMsg.message_id];
+        if (ctx.message?.message_id) {
+          ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+        }
         return;
       }
 
       const processingMsg = await ctx.reply('⏳ Обрабатываю ссылку...', {
         message_thread_id: threadId,
       });
+      ctx.session.messageIdsToDelete?.push(processingMsg.message_id);
 
       try {
         const parsedGame = await this.gameService.parser.parseGame(text);
 
         if (!parsedGame.title) {
           logger.warn('Failed to parse game title', { chatId, url: text });
-          await ctx.reply(
+          // Удаляем предыдущие сообщения
+          await this.deleteMessages(ctx);
+
+          const errorMsg = await ctx.reply(
             '❌ Не удалось получить информацию об игре. Проверьте ссылку и попробуйте снова.',
             { message_thread_id: threadId }
           );
-          if (processingMsg.message_id) {
-            await ctx.api.deleteMessage(chatId, processingMsg.message_id);
+          ctx.session.messageIdsToDelete = [errorMsg.message_id];
+          if (ctx.message?.message_id) {
+            ctx.session.messageIdsToDelete.push(ctx.message.message_id);
           }
           return;
         }
+
+        // Удаляем предыдущие сообщения
+        await this.deleteMessages(ctx);
 
         ctx.session.gameUrl = text;
         ctx.session.awaitingGameUrl = false;
@@ -295,22 +362,30 @@ export class GameBot {
           title: parsedGame.title,
         });
 
-        if (processingMsg.message_id) {
-          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        }
-        await ctx.reply(
+        const message = await ctx.reply(
           `✅ Игра найдена: ${parsedGame.title}\n` + 'Укажите количество игроков (по умолчанию: 1)',
           { message_thread_id: threadId }
         );
+        ctx.session.messageIdsToDelete = [message.message_id];
+        if (ctx.message?.message_id) {
+          ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+        }
         return;
       } catch (error) {
         logger.error('Error processing Steam URL', { chatId, url: text, error });
-        if (processingMsg.message_id) {
-          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
+        // Удаляем предыдущие сообщения
+        await this.deleteMessages(ctx);
+
+        const errorMsg = await ctx.reply(
+          '❌ Произошла ошибка при обработке ссылки. Попробуйте позже.',
+          {
+            message_thread_id: threadId,
+          }
+        );
+        ctx.session.messageIdsToDelete = [errorMsg.message_id];
+        if (ctx.message?.message_id) {
+          ctx.session.messageIdsToDelete.push(ctx.message.message_id);
         }
-        await ctx.reply('❌ Произошла ошибка при обработке ссылки. Попробуйте позже.', {
-          message_thread_id: threadId,
-        });
         return;
       }
     }
@@ -319,14 +394,24 @@ export class GameBot {
     if (ctx.session.step === 'players' && ctx.session.awaitingPlayers) {
       const players = parseInt(text);
       if (isNaN(players) || players < 1) {
-        await ctx.reply(
+        // Удаляем предыдущие сообщения
+        await this.deleteMessages(ctx);
+
+        const errorMsg = await ctx.reply(
           'Пожалуйста, укажите корректное количество игроков (целое число больше 0)',
           {
             message_thread_id: threadId,
           }
         );
+        ctx.session.messageIdsToDelete = [errorMsg.message_id];
+        if (ctx.message?.message_id) {
+          ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+        }
         return;
       }
+
+      // Удаляем предыдущие сообщения
+      await this.deleteMessages(ctx);
 
       ctx.session.players = players;
       ctx.session.awaitingPlayers = false;
@@ -351,15 +436,23 @@ export class GameBot {
           keyboard.row();
         }
 
-        await ctx.reply('Выберите категорию игры:', {
+        const message = await ctx.reply('Выберите категорию игры:', {
           reply_markup: keyboard,
           message_thread_id: threadId,
         });
+        ctx.session.messageIdsToDelete = [message.message_id];
+        if (ctx.message?.message_id) {
+          ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+        }
       } catch (error) {
         logger.error('Error getting categories', { error });
-        await ctx.reply('Произошла ошибка при получении списка категорий', {
+        const errorMsg = await ctx.reply('Произошла ошибка при получении списка категорий', {
           message_thread_id: threadId,
         });
+        ctx.session.messageIdsToDelete = [errorMsg.message_id];
+        if (ctx.message?.message_id) {
+          ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+        }
       }
       return;
     }
