@@ -116,4 +116,68 @@ export class GameCommandHandler extends BaseHandler {
       });
     }
   }
+
+  async handleEditCategory(ctx: BotContext): Promise<void> {
+    logger.debug('Handling /edit_category command', { chatId: ctx.chat?.id });
+
+    if (!(await this.validateUser(ctx))) {
+      return;
+    }
+
+    try {
+      const games = await this.gameService.getGames();
+      if (games.length === 0) {
+        await ctx.reply('❌ Список игр пуст', {
+          message_thread_id: this.getThreadId(ctx),
+        });
+        return;
+      }
+
+      const keyboard = new InlineKeyboard();
+      games.forEach(game => {
+        keyboard.text(game.title, `edit_category:${game.id}`).row();
+      });
+
+      await ctx.reply('Выберите игру для изменения категории:', {
+        reply_markup: keyboard,
+        message_thread_id: this.getThreadId(ctx),
+      });
+    } catch (error) {
+      logger.error('Error getting games for category editing', { error });
+      await ctx.reply('❌ Произошла ошибка при получении списка игр', {
+        message_thread_id: this.getThreadId(ctx),
+      });
+    }
+  }
+
+  async handleAddCategory(ctx: BotContext): Promise<void> {
+    logger.debug('Handling /add_category command', { chatId: ctx.chat?.id });
+
+    if (!(await this.validateUser(ctx))) {
+      return;
+    }
+
+    const categoryName = ctx.message?.text?.split(' ').slice(1).join(' ');
+    if (!categoryName) {
+      await ctx.reply(
+        '❌ Пожалуйста, укажите название категории после команды.\nПример: /add_category Стратегии',
+        {
+          message_thread_id: this.getThreadId(ctx),
+        }
+      );
+      return;
+    }
+
+    try {
+      await this.gameService.createCategory(categoryName);
+      await ctx.reply(`✅ Категория "${categoryName}" успешно создана!`, {
+        message_thread_id: this.getThreadId(ctx),
+      });
+    } catch (error) {
+      logger.error('Error creating category', { categoryName, error });
+      await ctx.reply('❌ Произошла ошибка при создании категории', {
+        message_thread_id: this.getThreadId(ctx),
+      });
+    }
+  }
 }

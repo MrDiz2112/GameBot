@@ -178,6 +178,11 @@ export class MessageHandlers {
       return;
     }
 
+    if (ctx.session.step === 'edit_category') {
+      await this.handleEditCategoryConfirmation(ctx, category);
+      return;
+    }
+
     if (
       !chatId ||
       !ctx.session.gameUrl ||
@@ -213,6 +218,77 @@ export class MessageHandlers {
       await this.handleSuccessfulGameAdd(ctx, threadId);
     } catch (error) {
       await this.handleGameAddError(ctx, category, chatId, threadId);
+    }
+  }
+
+  async handleEditCategorySelection(ctx: BotContext): Promise<void> {
+    if (!ctx.match?.[1]) return;
+
+    const gameId = parseInt(ctx.match[1]);
+    const userId = ctx.from?.id;
+    const threadId = ctx.callbackQuery?.message?.message_thread_id;
+
+    if (!userId) {
+      await ctx.answerCallbackQuery({
+        text: '❌ Ошибка: не удалось определить пользователя',
+        show_alert: true,
+      });
+      return;
+    }
+
+    try {
+      const categories = await this.gameService.getCategories();
+      const keyboard = this.createCategoryKeyboard(categories);
+
+      ctx.session.gameId = gameId;
+      ctx.session.userId = userId;
+      ctx.session.step = 'edit_category';
+      ctx.session.awaitingCategories = true;
+
+      await ctx.answerCallbackQuery();
+      const message = await ctx.reply('Выберите новую категорию для игры:', {
+        reply_markup: keyboard,
+        message_thread_id: threadId,
+      });
+      this.updateMessageIds(ctx, message.message_id);
+    } catch (error) {
+      logger.error('Error getting categories for editing', { error });
+      await ctx.answerCallbackQuery({
+        text: '❌ Произошла ошибка при получении категорий',
+        show_alert: true,
+      });
+    }
+  }
+
+  private async handleEditCategoryConfirmation(ctx: BotContext, category: string): Promise<void> {
+    const gameId = ctx.session.gameId;
+    const threadId = ctx.callbackQuery?.message?.message_thread_id;
+
+    if (!gameId) {
+      await ctx.answerCallbackQuery({
+        text: '❌ Ошибка: не удалось определить игру',
+        show_alert: true,
+      });
+      return;
+    }
+
+    try {
+      await this.gameService.updateGame(gameId, { category });
+      await this.deleteMessages(ctx);
+      await ctx.answerCallbackQuery({
+        text: '✅ Категория успешно изменена',
+      });
+      await ctx.reply('✅ Категория игры успешно изменена!', {
+        message_thread_id: threadId,
+      });
+      this.clearSession(ctx);
+    } catch (error) {
+      logger.error('Error updating game category', { gameId, category, error });
+      await ctx.answerCallbackQuery({
+        text: '❌ Произошла ошибка при изменении категории',
+        show_alert: true,
+      });
+      this.clearSession(ctx);
     }
   }
 

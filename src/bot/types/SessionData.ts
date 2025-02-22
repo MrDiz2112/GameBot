@@ -6,6 +6,7 @@ export interface SessionData {
   players?: number;
   awaitingGameUrl?: boolean;
   userId?: number;
-  step?: 'url' | 'players' | 'category' | null;
+  gameId?: number;
+  step?: 'url' | 'players' | 'category' | 'edit_category' | null;
   messageIdsToDelete?: number[];
 }
