@@ -216,6 +216,48 @@ export class MessageHandlers {
     }
   }
 
+  async handleDeleteGame(ctx: BotContext): Promise<void> {
+    if (!ctx.match?.[1] || !ctx.callbackQuery) return;
+
+    const gameId = parseInt(ctx.match[1]);
+    const chatId = ctx.chat?.id;
+    const userId = ctx.from?.id;
+    const threadId = ctx.callbackQuery.message?.message_thread_id;
+
+    if (!userId || !chatId) {
+      await ctx.answerCallbackQuery({
+        text: '❌ Ошибка: не удалось определить пользователя или чат',
+        show_alert: true,
+      });
+      return;
+    }
+
+    try {
+      await this.gameService.removeGame(gameId);
+      await ctx.answerCallbackQuery({
+        text: '✅ Игра успешно удалена',
+        show_alert: true,
+      });
+
+      if (ctx.callbackQuery.message) {
+        await ctx.api.deleteMessage(chatId, ctx.callbackQuery.message.message_id);
+      }
+
+      await ctx.reply('✅ Игра успешно удалена из списка', {
+        message_thread_id: threadId,
+      });
+    } catch (error) {
+      logger.error('Error deleting game', { gameId, error });
+      await ctx.answerCallbackQuery({
+        text: '❌ Произошла ошибка при удалении игры',
+        show_alert: true,
+      });
+      await ctx.reply('❌ Произошла ошибка при удалении игры', {
+        message_thread_id: threadId,
+      });
+    }
+  }
+
   private async handleSuccessfulGameAdd(ctx: BotContext, threadId?: number): Promise<void> {
     await this.deleteMessages(ctx);
     await ctx.answerCallbackQuery({

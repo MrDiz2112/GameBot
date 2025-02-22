@@ -1,5 +1,6 @@
 import { BaseHandler, BotContext } from './BaseHandler';
 import logger from '../../utils/logger';
+import { InlineKeyboard } from 'grammy';
 
 export class GameCommandHandler extends BaseHandler {
   async handleAdd(ctx: BotContext): Promise<void> {
@@ -78,6 +79,39 @@ export class GameCommandHandler extends BaseHandler {
         await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
       }
       await ctx.reply('❌ Произошла ошибка при получении списка категорий', {
+        message_thread_id: this.getThreadId(ctx),
+      });
+    }
+  }
+
+  async handleDelete(ctx: BotContext): Promise<void> {
+    logger.debug('Handling /delete command', { chatId: ctx.chat?.id });
+
+    if (!(await this.validateUser(ctx))) {
+      return;
+    }
+
+    try {
+      const games = await this.gameService.getGames();
+      if (games.length === 0) {
+        await ctx.reply('❌ Список игр пуст', {
+          message_thread_id: this.getThreadId(ctx),
+        });
+        return;
+      }
+
+      const keyboard = new InlineKeyboard();
+      games.forEach(game => {
+        keyboard.text(game.title, `delete:${game.id}`).row();
+      });
+
+      await ctx.reply('Выберите игру для удаления:', {
+        reply_markup: keyboard,
+        message_thread_id: this.getThreadId(ctx),
+      });
+    } catch (error) {
+      logger.error('Error getting games for deletion', { error });
+      await ctx.reply('❌ Произошла ошибка при получении списка игр', {
         message_thread_id: this.getThreadId(ctx),
       });
     }

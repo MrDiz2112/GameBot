@@ -65,6 +65,7 @@ export class GameBot {
     this.bot.command('list', ctx => this.gameCommandHandler.handleList(ctx));
     this.bot.command('check_prices', ctx => this.gameCommandHandler.handleCheckPrices(ctx));
     this.bot.command('categories', ctx => this.gameCommandHandler.handleCategories(ctx));
+    this.bot.command('delete', ctx => this.gameCommandHandler.handleDelete(ctx));
 
     // Notification commands
     this.bot.command('set_notifications', ctx =>
@@ -79,6 +80,7 @@ export class GameBot {
     this.bot.callbackQuery(/^category:(.+)$/, ctx =>
       this.messageHandlers.handleCategorySelection(ctx)
     );
+    this.bot.callbackQuery(/^delete:(\d+)$/, ctx => this.messageHandlers.handleDeleteGame(ctx));
 
     this.bot.api.setMyCommands([
       { command: 'start', description: 'Начать работу с ботом' },
@@ -87,6 +89,7 @@ export class GameBot {
       { command: 'check_prices', description: 'Проверить цены' },
       { command: 'categories', description: 'Показать список категорий и количество игр в них' },
       { command: 'add_category', description: 'Добавить новую категорию' },
+      { command: 'delete', description: 'Удалить игру из списка' },
       {
         command: 'set_notifications',
         description: 'Настроить уведомления о скидках в текущем топике',
