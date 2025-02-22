@@ -363,11 +363,11 @@ export class GameBot {
       // Формируем сообщение
       const message = Object.entries(gamesByCategory)
         .map(([category, categoryGames]) => {
-          const header = `*__${category}__*\n\n`;
+          const header = `\\-\\-\\-\\-\\-\\- *${category}* \\-\\-\\-\\-\\-\\-\n\n`;
           const gamesList = categoryGames
             .map(game => {
               const name = `[${game.title}](${game.url})`;
-              const price = `${game.basePrice > game.currentPrice ? `~${game.basePrice}~ ` : ''}${game.currentPrice || 'Н/Д'} руб\\.`;
+              const price = `${game.basePrice > game.currentPrice ? `~${game.basePrice}~ ` : ''}${game.currentPrice} руб\\.`;
               const players = `${game.players} чел\\.`;
               return `\\- ${name} \\(${players}\\) \\- ${price}`;
             })
