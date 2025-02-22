@@ -168,6 +168,7 @@ export class MessageHandlers {
     const category = ctx.match[1];
     const chatId = ctx.chat?.id;
     const userId = ctx.from?.id;
+    const threadId = ctx.callbackQuery?.message?.message_thread_id;
 
     if (!userId) {
       await ctx.answerCallbackQuery({
@@ -192,7 +193,9 @@ export class MessageHandlers {
     }
 
     await this.deleteMessages(ctx);
-    const processingMsg = await ctx.reply('⏳ Добавляю игру...');
+    const processingMsg = await ctx.reply('⏳ Добавляю игру...', {
+      message_thread_id: threadId,
+    });
     ctx.session.messageIdsToDelete = [processingMsg.message_id];
 
     try {
@@ -207,25 +210,28 @@ export class MessageHandlers {
       };
 
       await this.gameService.addGame(game);
-      await this.handleSuccessfulGameAdd(ctx);
+      await this.handleSuccessfulGameAdd(ctx, threadId);
     } catch (error) {
-      await this.handleGameAddError(ctx, category, chatId);
+      await this.handleGameAddError(ctx, category, chatId, threadId);
     }
   }
 
-  private async handleSuccessfulGameAdd(ctx: BotContext): Promise<void> {
+  private async handleSuccessfulGameAdd(ctx: BotContext, threadId?: number): Promise<void> {
     await this.deleteMessages(ctx);
     await ctx.answerCallbackQuery({
       text: '✅ Категория выбрана',
     });
-    await ctx.reply('✅ Игра успешно добавлена!');
+    await ctx.reply('✅ Игра успешно добавлена!', {
+      message_thread_id: threadId,
+    });
     this.clearSession(ctx);
   }
 
   private async handleGameAddError(
     ctx: BotContext,
     category: string,
-    chatId: number
+    chatId: number,
+    threadId?: number
   ): Promise<void> {
     logger.error('Error adding game with category', {
       chatId,
@@ -237,7 +243,9 @@ export class MessageHandlers {
       text: '❌ Произошла ошибка при добавлении игры',
       show_alert: true,
     });
-    await ctx.reply('❌ Произошла ошибка при добавлении игры');
+    await ctx.reply('❌ Произошла ошибка при добавлении игры', {
+      message_thread_id: threadId,
+    });
     this.clearSession(ctx);
   }
 

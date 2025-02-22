@@ -1,28 +1,36 @@
 import { Bot, Context, session, SessionFlavor } from 'grammy';
 import { IGameService } from '../types';
 import { NotificationService } from '../services/NotificationService';
-import { CommandHandlers } from './handlers/CommandHandlers';
 import { MessageHandlers } from './handlers/MessageHandlers';
 import { MessageHelper } from './helpers/MessageHelper';
 import { SessionData } from './types/SessionData';
+import { BasicCommandHandler } from './handlers/BasicCommandHandler';
+import { GameCommandHandler } from './handlers/GameCommandHandler';
+import { NotificationHandler } from './handlers/NotificationHandler';
 import logger from '../utils/logger';
 
 type BotContext = Context & SessionFlavor<SessionData>;
 
 export class GameBot {
   private bot: Bot<BotContext>;
-  private commandHandlers: CommandHandlers;
   private messageHandlers: MessageHandlers;
+  private basicCommandHandler: BasicCommandHandler;
+  private gameCommandHandler: GameCommandHandler;
+  private notificationHandler: NotificationHandler;
   private messageHelper: MessageHelper;
 
   constructor(token: string, gameService: IGameService) {
     this.bot = new Bot<BotContext>(token);
     this.messageHelper = new MessageHelper();
     const notificationService = new NotificationService(this.bot, gameService);
-    this.commandHandlers = new CommandHandlers(
+
+    // Initialize handlers
+    this.basicCommandHandler = new BasicCommandHandler(gameService, this.messageHelper);
+    this.gameCommandHandler = new GameCommandHandler(gameService, this.messageHelper);
+    this.notificationHandler = new NotificationHandler(
       gameService,
-      notificationService,
-      this.messageHelper
+      this.messageHelper,
+      notificationService
     );
     this.messageHandlers = new MessageHandlers(gameService, this.messageHelper);
 
@@ -48,21 +56,26 @@ export class GameBot {
   }
 
   private setupCommands(): void {
-    this.bot.command('start', ctx => this.commandHandlers.handleStart(ctx));
-    this.bot.command('add', ctx => this.commandHandlers.handleAdd(ctx));
-    this.bot.command('list', ctx => this.commandHandlers.handleList(ctx));
-    this.bot.command('check_prices', ctx => this.commandHandlers.handleCheckPrices(ctx));
-    this.bot.command('help', ctx => this.commandHandlers.handleHelp(ctx));
-    this.bot.command('set_notifications', ctx => this.commandHandlers.handleSetNotifications(ctx));
-    this.bot.command('remove_notifications', ctx =>
-      this.commandHandlers.handleRemoveNotifications(ctx)
+    // Basic commands
+    this.bot.command('start', ctx => this.basicCommandHandler.handleStart(ctx));
+    this.bot.command('help', ctx => this.basicCommandHandler.handleHelp(ctx));
+
+    // Game commands
+    this.bot.command('add', ctx => this.gameCommandHandler.handleAdd(ctx));
+    this.bot.command('list', ctx => this.gameCommandHandler.handleList(ctx));
+    this.bot.command('check_prices', ctx => this.gameCommandHandler.handleCheckPrices(ctx));
+    this.bot.command('categories', ctx => this.gameCommandHandler.handleCategories(ctx));
+
+    // Notification commands
+    this.bot.command('set_notifications', ctx =>
+      this.notificationHandler.handleSetNotifications(ctx)
     );
-    this.bot.command('categories', ctx => this.commandHandlers.handleCategories(ctx));
+    this.bot.command('remove_notifications', ctx =>
+      this.notificationHandler.handleRemoveNotifications(ctx)
+    );
 
-    // Handle URL input after /add command
+    // Message handlers
     this.bot.on('message:text', ctx => this.messageHandlers.handleMessage(ctx));
-
-    // Handle category selection
     this.bot.callbackQuery(/^category:(.+)$/, ctx =>
       this.messageHandlers.handleCategorySelection(ctx)
     );
