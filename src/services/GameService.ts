@@ -86,14 +86,7 @@ export class GameService implements IGameService {
     } catch (error) {
       logger.error('Failed to add game', {
         url: gameData.url,
-        error:
-          error instanceof Error
-            ? {
-                message: error.message,
-                name: error.name,
-                stack: error.stack,
-              }
-            : error,
+        error,
         gameData,
       });
       throw error;
@@ -197,6 +190,12 @@ export class GameService implements IGameService {
     try {
       const game = await this.prisma.game.findUnique({
         where: { id },
+        select: {
+          id: true,
+          url: true,
+          basePrice: true,
+          currentPrice: true,
+        },
       });
 
       if (!game) {
@@ -204,25 +203,102 @@ export class GameService implements IGameService {
         throw new Error('Game not found');
       }
 
-      const priceInfo = await this.parser.parsePrice(game.url);
+      logger.debug('Current game state', { game });
 
-      await this.prisma.game.update({
+      const priceInfo = await this.parser.parsePrice(game.url);
+      logger.debug('Raw price info from parser', {
+        priceInfo,
+        basePrice: {
+          value: priceInfo.basePrice,
+          type: typeof priceInfo.basePrice,
+        },
+        discount: {
+          value: priceInfo.discount,
+          type: typeof priceInfo.discount,
+        },
+      });
+
+      // Попытка преобразовать и валидировать basePrice
+      let basePrice: number;
+      try {
+        basePrice = Number(priceInfo.basePrice);
+        if (isNaN(basePrice) || basePrice < 0) {
+          throw new Error(`Invalid basePrice value: ${priceInfo.basePrice}`);
+        }
+      } catch (e) {
+        logger.error('Failed to parse basePrice', {
+          originalValue: priceInfo.basePrice,
+          error: e,
+        });
+        // Если не удалось получить новую цену, используем текущую
+        basePrice = game.basePrice;
+        logger.info('Using current basePrice as fallback', { basePrice });
+      }
+
+      // Попытка преобразовать и валидировать currentPrice
+      let currentPrice: number;
+      try {
+        if (
+          typeof priceInfo.discount === 'number' &&
+          !isNaN(priceInfo.discount) &&
+          priceInfo.discount >= 0
+        ) {
+          currentPrice = priceInfo.discount;
+        } else {
+          currentPrice = basePrice;
+        }
+      } catch (e) {
+        logger.error('Failed to parse currentPrice', {
+          discount: priceInfo.discount,
+          error: e,
+        });
+        currentPrice = basePrice;
+      }
+
+      const updateData = {
+        currentPrice,
+        basePrice,
+        lastChecked: new Date(),
+      };
+
+      logger.debug('Updating game with data', {
+        updateData,
+        types: {
+          currentPrice: typeof currentPrice,
+          basePrice: typeof basePrice,
+        },
+        values: {
+          current: currentPrice,
+          base: basePrice,
+        },
+      });
+
+      const updatedGame = await this.prisma.game.update({
         where: { id },
-        data: {
-          currentPrice: priceInfo.discount ?? priceInfo.basePrice,
-          basePrice: priceInfo.basePrice,
-          lastChecked: new Date(),
+        data: updateData,
+        select: {
+          id: true,
+          basePrice: true,
+          currentPrice: true,
+          lastChecked: true,
         },
       });
 
       logger.info('Game price updated successfully', {
-        id,
-        basePrice: priceInfo.basePrice,
-        currentPrice: priceInfo.discount ?? priceInfo.basePrice,
-        discount: priceInfo.discount,
+        before: {
+          basePrice: game.basePrice,
+          currentPrice: game.currentPrice,
+        },
+        after: updatedGame,
+        updateData,
       });
     } catch (error) {
-      logger.error('Failed to update game price', { id, error });
+      logger.error('Failed to update game price', {
+        id,
+        error,
+        errorType: typeof error,
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
       throw error;
     }
   }
