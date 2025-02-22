@@ -180,4 +180,43 @@ export class GameCommandHandler extends BaseHandler {
       });
     }
   }
+
+  async handleEditPlayers(ctx: BotContext): Promise<void> {
+    logger.debug('Handling /edit_players command', { chatId: ctx.chat?.id });
+
+    if (!(await this.validateUser(ctx))) {
+      return;
+    }
+
+    try {
+      const games = await this.gameService.getGames();
+      if (games.length === 0) {
+        await ctx.reply('❌ Список игр пуст', {
+          message_thread_id: this.getThreadId(ctx),
+        });
+        return;
+      }
+
+      const keyboard = new InlineKeyboard();
+      games.forEach(game => {
+        keyboard.text(game.title, `edit_players:${game.id}`).row();
+      });
+
+      const message = await ctx.reply('Выберите игру для изменения количества игроков:', {
+        reply_markup: keyboard,
+        message_thread_id: this.getThreadId(ctx),
+      });
+
+      // Сохраняем ID сообщения для последующего удаления
+      ctx.session.messageIdsToDelete = [message.message_id];
+      if (ctx.message?.message_id) {
+        ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+      }
+    } catch (error) {
+      logger.error('Error getting games for players editing', { error });
+      await ctx.reply('❌ Произошла ошибка при получении списка игр', {
+        message_thread_id: this.getThreadId(ctx),
+      });
+    }
+  }
 }

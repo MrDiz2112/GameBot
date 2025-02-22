@@ -28,12 +28,14 @@ export interface IGame {
 
 export interface IGameService {
   parser: IParser;
-  addGame(game: IGame): Promise<IGame>;
-  removeGame(id: number): Promise<void>;
-  updateGame(id: number, game: Partial<IGame>): Promise<IGame>;
+  addGame(game: IGame): Promise<void>;
   getGames(): Promise<IGame[]>;
-  updatePrice(id: number): Promise<void>;
+  getGame(id: number): Promise<IGame | null>;
+  removeGame(id: number): Promise<void>;
+  updateGame(id: number, updates: Partial<IGame>): Promise<void>;
   getCategories(): Promise<string[]>;
+  checkPrices(): Promise<void>;
+  updatePrice(id: number): Promise<void>;
   getCategoriesWithGameCount(): Promise<Array<{ name: string; gamesCount: number }>>;
   createCategory(name: string): Promise<{ id: number; name: string }>;
 }

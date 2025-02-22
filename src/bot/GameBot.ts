@@ -68,6 +68,7 @@ export class GameBot {
     this.bot.command('delete', ctx => this.gameCommandHandler.handleDelete(ctx));
     this.bot.command('edit_category', ctx => this.gameCommandHandler.handleEditCategory(ctx));
     this.bot.command('add_category', ctx => this.gameCommandHandler.handleAddCategory(ctx));
+    this.bot.command('edit_players', ctx => this.gameCommandHandler.handleEditPlayers(ctx));
 
     // Notification commands
     this.bot.command('set_notifications', ctx =>
@@ -86,6 +87,9 @@ export class GameBot {
     this.bot.callbackQuery(/^edit_category:(\d+)$/, ctx =>
       this.messageHandlers.handleEditCategorySelection(ctx)
     );
+    this.bot.callbackQuery(/^edit_players:(\d+)$/, ctx =>
+      this.messageHandlers.handleEditPlayers(ctx)
+    );
 
     this.bot.api.setMyCommands([
       { command: 'start', description: 'Начать работу с ботом' },
@@ -95,6 +99,7 @@ export class GameBot {
       { command: 'categories', description: 'Показать список категорий и количество игр в них' },
       { command: 'add_category', description: 'Добавить новую категорию' },
       { command: 'edit_category', description: 'Изменить категорию игры' },
+      { command: 'edit_players', description: 'Изменить количество игроков' },
       { command: 'delete', description: 'Удалить игру из списка' },
       {
         command: 'set_notifications',

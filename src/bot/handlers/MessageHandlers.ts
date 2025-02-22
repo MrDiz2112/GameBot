@@ -55,6 +55,8 @@ export class MessageHandlers {
       await this.handleUrlStep(ctx, text, threadId);
     } else if (ctx.session.step === 'players' && ctx.session.awaitingPlayers) {
       await this.handlePlayersStep(ctx, text, threadId);
+    } else if (ctx.session.step === 'edit_players' && ctx.session.awaitingPlayers) {
+      await this.handleEditPlayersStep(ctx, text, threadId);
     }
   }
 
@@ -103,6 +105,51 @@ export class MessageHandlers {
 
     await this.deleteMessages(ctx);
     await this.setupCategorySelection(ctx, players, threadId);
+  }
+
+  private async handleEditPlayersStep(
+    ctx: BotContext,
+    text: string,
+    threadId?: number
+  ): Promise<void> {
+    const players = parseInt(text);
+    if (isNaN(players) || players < 1) {
+      await this.deleteMessages(ctx);
+      const errorMsg = await ctx.reply(
+        'Пожалуйста, укажите корректное количество игроков (целое число больше 0)',
+        { message_thread_id: threadId }
+      );
+      this.updateMessageIds(ctx, errorMsg.message_id);
+      return;
+    }
+
+    const gameId = ctx.session.gameId;
+    if (!gameId) {
+      await this.deleteMessages(ctx);
+      const errorMsg = await ctx.reply('❌ Ошибка: не удалось определить игру', {
+        message_thread_id: threadId,
+      });
+      this.updateMessageIds(ctx, errorMsg.message_id);
+      return;
+    }
+
+    try {
+      await this.gameService.updateGame(gameId, { players });
+      await this.deleteMessages(ctx);
+      const successMsg = await ctx.reply('✅ Количество игроков успешно обновлено!', {
+        message_thread_id: threadId,
+      });
+      this.updateMessageIds(ctx, successMsg.message_id);
+      this.clearSession(ctx);
+    } catch (error) {
+      logger.error('Error updating game players', { gameId, players, error });
+      await this.deleteMessages(ctx);
+      const errorMsg = await ctx.reply('❌ Произошла ошибка при обновлении количества игроков', {
+        message_thread_id: threadId,
+      });
+      this.updateMessageIds(ctx, errorMsg.message_id);
+      this.clearSession(ctx);
+    }
   }
 
   private async handleParseError(ctx: BotContext, threadId?: number): Promise<void> {
@@ -400,5 +447,52 @@ export class MessageHandlers {
     ctx.session.userId = undefined;
     ctx.session.step = null;
     ctx.session.messageIdsToDelete = [];
+  }
+
+  async handleEditPlayers(ctx: BotContext): Promise<void> {
+    if (!ctx.match?.[1]) return;
+
+    const gameId = parseInt(ctx.match[1]);
+    const userId = ctx.from?.id;
+    const threadId = ctx.callbackQuery?.message?.message_thread_id;
+
+    if (!userId) {
+      await ctx.answerCallbackQuery({
+        text: '❌ Ошибка: не удалось определить пользователя',
+        show_alert: true,
+      });
+      return;
+    }
+
+    try {
+      const game = await this.gameService.getGame(gameId);
+      if (!game) {
+        await ctx.answerCallbackQuery({
+          text: '❌ Игра не найдена',
+          show_alert: true,
+        });
+        return;
+      }
+
+      await this.deleteMessages(ctx);
+
+      ctx.session.gameId = gameId;
+      ctx.session.userId = userId;
+      ctx.session.step = 'edit_players';
+      ctx.session.awaitingPlayers = true;
+
+      await ctx.answerCallbackQuery();
+      const message = await ctx.reply(
+        `Текущее количество игроков: ${game.players}\nВведите новое количество игроков:`,
+        { message_thread_id: threadId }
+      );
+      this.updateMessageIds(ctx, message.message_id);
+    } catch (error) {
+      logger.error('Error getting game for editing players', { error });
+      await ctx.answerCallbackQuery({
+        text: '❌ Произошла ошибка при получении информации об игре',
+        show_alert: true,
+      });
+    }
   }
 }

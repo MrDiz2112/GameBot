@@ -12,7 +12,7 @@ export class GameService implements IGameService {
     logger.info('GameService initialized');
   }
 
-  async addGame(gameData: IGame): Promise<IGame> {
+  async addGame(gameData: IGame): Promise<void> {
     logger.debug('Adding new game with data', {
       gameData,
       url: gameData.url,
@@ -27,12 +27,11 @@ export class GameService implements IGameService {
         throw new Error('Missing required game data');
       }
 
-      const { category, id: _id, tags: _tags, players, ...restGameData } = gameData;
+      const { category, players, ...restGameData } = gameData;
       logger.debug('Destructured game data', {
         category,
         players,
         restGameData,
-        tags: _tags,
       });
 
       const tags = parsedGame.tags || [];
@@ -66,7 +65,7 @@ export class GameService implements IGameService {
       };
       logger.debug('Preparing Prisma create data', { prismaData });
 
-      const game = await this.prisma.game.create({
+      await this.prisma.game.create({
         data: prismaData,
         include: {
           category: true,
@@ -74,15 +73,7 @@ export class GameService implements IGameService {
         },
       });
 
-      logger.info('Game added successfully', {
-        id: game.id,
-        title: game.title,
-        players: game.players,
-        category: game.category?.name,
-        tags: game.tags.map(t => t.name),
-      });
-
-      return this.mapGameToInterface(game);
+      logger.info('Game added successfully');
     } catch (error) {
       logger.error('Failed to add game', {
         url: gameData.url,
@@ -106,7 +97,7 @@ export class GameService implements IGameService {
     }
   }
 
-  async updateGame(id: number, gameData: Partial<IGame>): Promise<IGame> {
+  async updateGame(id: number, gameData: Partial<IGame>): Promise<void> {
     logger.debug('Updating game', { id, data: gameData });
     try {
       let categoryId: number | undefined;
@@ -119,9 +110,17 @@ export class GameService implements IGameService {
         categoryId = categoryRecord.id;
       }
 
-      const { category: _category, id: _id, tags: _tags, ...prismaUpdateData } = gameData;
+      const prismaUpdateData = {
+        title: gameData.title,
+        url: gameData.url,
+        basePrice: gameData.basePrice,
+        currentPrice: gameData.currentPrice,
+        players: gameData.players,
+        platform: gameData.platform,
+        lastChecked: gameData.lastChecked,
+      };
 
-      const game = await this.prisma.game.update({
+      await this.prisma.game.update({
         where: { id },
         data: {
           ...prismaUpdateData,
@@ -143,7 +142,6 @@ export class GameService implements IGameService {
       });
 
       logger.info('Game updated successfully', { id });
-      return this.mapGameToInterface(game);
     } catch (error) {
       logger.error('Failed to update game', { id, error });
       throw error;
@@ -164,6 +162,46 @@ export class GameService implements IGameService {
       return games.map(this.mapGameToInterface);
     } catch (error) {
       logger.error('Failed to get games', { error });
+      throw error;
+    }
+  }
+
+  async getGame(id: number): Promise<IGame | null> {
+    logger.debug('Getting game by id', { id });
+    try {
+      const game = await this.prisma.game.findUnique({
+        where: { id },
+        include: {
+          category: true,
+          tags: true,
+        },
+      });
+
+      if (!game) {
+        logger.info('Game not found', { id });
+        return null;
+      }
+
+      logger.info('Game retrieved successfully', { id });
+      return this.mapGameToInterface(game);
+    } catch (error) {
+      logger.error('Failed to get game', { id, error });
+      throw error;
+    }
+  }
+
+  async checkPrices(): Promise<void> {
+    logger.debug('Checking prices for all games');
+    try {
+      const games = await this.getGames();
+      for (const game of games) {
+        if (game.id) {
+          await this.updatePrice(game.id);
+        }
+      }
+      logger.info('Prices checked successfully for all games');
+    } catch (error) {
+      logger.error('Failed to check prices', { error });
       throw error;
     }
   }
