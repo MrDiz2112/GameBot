@@ -9,6 +9,9 @@ interface SessionData {
   awaitingCategories?: boolean;
   awaitingPlayers?: boolean;
   players?: number;
+  awaitingGameUrl?: boolean;
+  userId?: number;
+  step?: 'url' | 'players' | 'category' | null;
 }
 
 type BotContext = Context & SessionFlavor<SessionData>;
@@ -31,6 +34,9 @@ export class GameBot {
           awaitingCategories: false,
           awaitingPlayers: false,
           players: undefined,
+          awaitingGameUrl: false,
+          userId: undefined,
+          step: null,
         }),
       })
     );
@@ -60,8 +66,15 @@ export class GameBot {
 
       const category = ctx.match[1];
       const chatId = ctx.chat?.id;
+      const userId = ctx.from.id;
 
-      if (!chatId || !ctx.session.gameUrl || !ctx.session.awaitingCategories) {
+      if (
+        !chatId ||
+        !ctx.session.gameUrl ||
+        !ctx.session.awaitingCategories ||
+        ctx.session.step !== 'category' ||
+        ctx.session.userId !== userId
+      ) {
         await ctx.answerCallbackQuery({
           text: '❌ Ошибка: сессия выбора категории не активна',
           show_alert: true,
@@ -103,6 +116,9 @@ export class GameBot {
         ctx.session.awaitingCategories = false;
         ctx.session.players = undefined;
         ctx.session.awaitingPlayers = false;
+        ctx.session.awaitingGameUrl = false;
+        ctx.session.userId = undefined;
+        ctx.session.step = null;
       } catch (error) {
         logger.error('Error adding game with category', {
           chatId,
@@ -196,68 +212,96 @@ export class GameBot {
   private async handleAdd(ctx: BotContext): Promise<void> {
     logger.debug('Handling /add command', { chatId: ctx.chat?.id });
 
-    const url = ctx.match;
-    if (!url) {
-      await ctx.reply('Пожалуйста, используйте формат: /add <ссылка на игру в Steam>');
+    if (!ctx.from?.id) {
+      await ctx.reply('❌ Не удалось определить пользователя');
       return;
     }
 
-    if (!url.toString().includes('store.steampowered.com')) {
-      await ctx.reply('Пожалуйста, предоставьте корректную ссылку на игру в Steam');
-      return;
-    }
+    // Инициализируем сессию для пошагового добавления
+    ctx.session.userId = ctx.from.id;
+    ctx.session.step = 'url';
+    ctx.session.awaitingGameUrl = true;
 
-    const processingMsg = await ctx.reply('⏳ Обрабатываю ссылку...');
+    // Очищаем предыдущие данные
+    ctx.session.gameUrl = undefined;
+    ctx.session.category = undefined;
+    ctx.session.players = undefined;
+    ctx.session.awaitingCategories = false;
+    ctx.session.awaitingPlayers = false;
 
-    try {
-      const parsedGame = await this.gameService.parser.parseGame(url.toString());
-
-      if (!parsedGame.title) {
-        logger.warn('Failed to parse game title', { chatId: ctx.chat?.id, url });
-        await ctx.reply(
-          '❌ Не удалось получить информацию об игре. Проверьте ссылку и попробуйте снова.'
-        );
-        if (ctx.chat?.id) {
-          await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
-        }
-        return;
-      }
-
-      ctx.session.gameUrl = url.toString();
-      ctx.session.awaitingPlayers = true;
-      logger.info('Successfully parsed game', {
-        chatId: ctx.chat?.id,
-        url,
-        title: parsedGame.title,
-      });
-
-      if (ctx.chat?.id) {
-        await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
-      }
-      await ctx.reply(
-        `✅ Игра найдена: ${parsedGame.title}\n` + 'Укажите количество игроков (по умолчанию: 1)'
-      );
-    } catch (error) {
-      logger.error('Error processing Steam URL', { chatId: ctx.chat?.id, url, error });
-      if (ctx.chat?.id) {
-        await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
-      }
-      await ctx.reply('❌ Произошла ошибка при обработке ссылки. Попробуйте позже.');
-    }
+    await ctx.reply('Пожалуйста, отправьте ссылку на игру в Steam');
   }
 
   private async handleMessage(ctx: BotContext): Promise<void> {
     const text = ctx.message?.text;
     const chatId = ctx.chat?.id;
+    const userId = ctx.from?.id;
 
-    if (!text || !chatId) {
-      logger.warn('Received message without text or chatId');
+    if (!text || !chatId || !userId) {
+      logger.warn('Received message without text, chatId or userId');
       return;
     }
 
     logger.debug('Processing message', { chatId, text: text.substring(0, 50) });
 
-    if (ctx.session.gameUrl && ctx.session.awaitingPlayers) {
+    // Проверяем, что сообщение от того же пользователя, который начал процесс
+    if (ctx.session.userId && ctx.session.userId !== userId) {
+      return;
+    }
+
+    // Обработка URL
+    if (ctx.session.step === 'url' && ctx.session.awaitingGameUrl) {
+      if (!text.includes('store.steampowered.com')) {
+        await ctx.reply('Пожалуйста, предоставьте корректную ссылку на игру в Steam');
+        return;
+      }
+
+      const processingMsg = await ctx.reply('⏳ Обрабатываю ссылку...');
+
+      try {
+        const parsedGame = await this.gameService.parser.parseGame(text);
+
+        if (!parsedGame.title) {
+          logger.warn('Failed to parse game title', { chatId, url: text });
+          await ctx.reply(
+            '❌ Не удалось получить информацию об игре. Проверьте ссылку и попробуйте снова.'
+          );
+          if (processingMsg.message_id) {
+            await ctx.api.deleteMessage(chatId, processingMsg.message_id);
+          }
+          return;
+        }
+
+        ctx.session.gameUrl = text;
+        ctx.session.awaitingGameUrl = false;
+        ctx.session.step = 'players';
+        ctx.session.awaitingPlayers = true;
+
+        logger.info('Successfully parsed game', {
+          chatId,
+          url: text,
+          title: parsedGame.title,
+        });
+
+        if (processingMsg.message_id) {
+          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
+        }
+        await ctx.reply(
+          `✅ Игра найдена: ${parsedGame.title}\n` + 'Укажите количество игроков (по умолчанию: 1)'
+        );
+        return;
+      } catch (error) {
+        logger.error('Error processing Steam URL', { chatId, url: text, error });
+        if (processingMsg.message_id) {
+          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
+        }
+        await ctx.reply('❌ Произошла ошибка при обработке ссылки. Попробуйте позже.');
+        return;
+      }
+    }
+
+    // Обработка количества игроков
+    if (ctx.session.step === 'players' && ctx.session.awaitingPlayers) {
       const players = parseInt(text);
       if (isNaN(players) || players < 1) {
         await ctx.reply('Пожалуйста, укажите корректное количество игроков (целое число больше 0)');
@@ -266,6 +310,7 @@ export class GameBot {
 
       ctx.session.players = players;
       ctx.session.awaitingPlayers = false;
+      ctx.session.step = 'category';
       ctx.session.awaitingCategories = true;
 
       // Получаем все существующие категории из базы данных
@@ -292,50 +337,6 @@ export class GameBot {
         await ctx.reply('Произошла ошибка при получении списка категорий');
       }
       return;
-    }
-
-    if (ctx.session.gameUrl && ctx.session.awaitingCategories) {
-      logger.info('Processing category', { chatId, category: text });
-      const processingMsg = await ctx.reply('⏳ Добавляю игру...');
-
-      try {
-        const game: IGame = {
-          url: ctx.session.gameUrl,
-          platform: 'steam',
-          category: text,
-          players: ctx.session.players || 1,
-          basePrice: 0,
-          currentPrice: 0,
-          title: '', // Will be parsed
-        };
-
-        logger.debug('Adding game with data', { game });
-        await this.gameService.addGame(game);
-        logger.info('Game successfully added', {
-          chatId,
-          url: ctx.session.gameUrl,
-          category: text,
-          players: ctx.session.players,
-        });
-
-        await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        await ctx.reply('✅ Игра успешно добавлена!');
-      } catch (error) {
-        logger.error('Error adding game', {
-          chatId,
-          url: ctx.session.gameUrl,
-          category: text,
-          error,
-        });
-        await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        await ctx.reply('❌ Произошла ошибка при добавлении игры. Попробуйте еще раз.');
-      }
-
-      ctx.session.gameUrl = undefined;
-      ctx.session.category = undefined;
-      ctx.session.awaitingCategories = false;
-      ctx.session.players = undefined;
-      ctx.session.awaitingPlayers = false;
     }
   }
 
@@ -366,7 +367,9 @@ export class GameBot {
           const header = `\\-\\-\\-\\-\\-\\- *${category}* \\-\\-\\-\\-\\-\\-\n\n`;
           const gamesList = categoryGames
             .map(game => {
-              const name = `[${game.title}](${game.url})`;
+              // Экранируем специальные символы в названии игры
+              const escapedTitle = game.title.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
+              const name = `[${escapedTitle}](${game.url})`;
               const price = `${game.basePrice > game.currentPrice ? `~${game.basePrice}~ ` : ''}${game.currentPrice} руб\\.`;
               const players = `${game.players} чел\\.`;
               return `\\- ${name} \\(${players}\\) \\- ${price}`;
