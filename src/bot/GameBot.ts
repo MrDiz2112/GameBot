@@ -206,14 +206,18 @@ export class GameBot {
         'Для использования бота добавьте меня в группу с топиками.\n' +
         'Там вы сможете настроить уведомления о скидках в нужном топике.';
 
-    await ctx.reply(message);
+    await ctx.reply(message, {
+      message_thread_id: ctx.message?.message_thread_id,
+    });
   }
 
   private async handleAdd(ctx: BotContext): Promise<void> {
     logger.debug('Handling /add command', { chatId: ctx.chat?.id });
 
     if (!ctx.from?.id) {
-      await ctx.reply('❌ Не удалось определить пользователя');
+      await ctx.reply('❌ Не удалось определить пользователя', {
+        message_thread_id: ctx.message?.message_thread_id,
+      });
       return;
     }
 
@@ -229,13 +233,16 @@ export class GameBot {
     ctx.session.awaitingCategories = false;
     ctx.session.awaitingPlayers = false;
 
-    await ctx.reply('Пожалуйста, отправьте ссылку на игру в Steam');
+    await ctx.reply('Пожалуйста, отправьте ссылку на игру в Steam', {
+      message_thread_id: ctx.message?.message_thread_id,
+    });
   }
 
   private async handleMessage(ctx: BotContext): Promise<void> {
     const text = ctx.message?.text;
     const chatId = ctx.chat?.id;
     const userId = ctx.from?.id;
+    const threadId = ctx.message?.message_thread_id;
 
     if (!text || !chatId || !userId) {
       logger.warn('Received message without text, chatId or userId');
@@ -252,11 +259,15 @@ export class GameBot {
     // Обработка URL
     if (ctx.session.step === 'url' && ctx.session.awaitingGameUrl) {
       if (!text.includes('store.steampowered.com')) {
-        await ctx.reply('Пожалуйста, предоставьте корректную ссылку на игру в Steam');
+        await ctx.reply('Пожалуйста, предоставьте корректную ссылку на игру в Steam', {
+          message_thread_id: threadId,
+        });
         return;
       }
 
-      const processingMsg = await ctx.reply('⏳ Обрабатываю ссылку...');
+      const processingMsg = await ctx.reply('⏳ Обрабатываю ссылку...', {
+        message_thread_id: threadId,
+      });
 
       try {
         const parsedGame = await this.gameService.parser.parseGame(text);
@@ -264,7 +275,8 @@ export class GameBot {
         if (!parsedGame.title) {
           logger.warn('Failed to parse game title', { chatId, url: text });
           await ctx.reply(
-            '❌ Не удалось получить информацию об игре. Проверьте ссылку и попробуйте снова.'
+            '❌ Не удалось получить информацию об игре. Проверьте ссылку и попробуйте снова.',
+            { message_thread_id: threadId }
           );
           if (processingMsg.message_id) {
             await ctx.api.deleteMessage(chatId, processingMsg.message_id);
@@ -287,7 +299,8 @@ export class GameBot {
           await ctx.api.deleteMessage(chatId, processingMsg.message_id);
         }
         await ctx.reply(
-          `✅ Игра найдена: ${parsedGame.title}\n` + 'Укажите количество игроков (по умолчанию: 1)'
+          `✅ Игра найдена: ${parsedGame.title}\n` + 'Укажите количество игроков (по умолчанию: 1)',
+          { message_thread_id: threadId }
         );
         return;
       } catch (error) {
@@ -295,7 +308,9 @@ export class GameBot {
         if (processingMsg.message_id) {
           await ctx.api.deleteMessage(chatId, processingMsg.message_id);
         }
-        await ctx.reply('❌ Произошла ошибка при обработке ссылки. Попробуйте позже.');
+        await ctx.reply('❌ Произошла ошибка при обработке ссылки. Попробуйте позже.', {
+          message_thread_id: threadId,
+        });
         return;
       }
     }
@@ -304,7 +319,12 @@ export class GameBot {
     if (ctx.session.step === 'players' && ctx.session.awaitingPlayers) {
       const players = parseInt(text);
       if (isNaN(players) || players < 1) {
-        await ctx.reply('Пожалуйста, укажите корректное количество игроков (целое число больше 0)');
+        await ctx.reply(
+          'Пожалуйста, укажите корректное количество игроков (целое число больше 0)',
+          {
+            message_thread_id: threadId,
+          }
+        );
         return;
       }
 
@@ -331,10 +351,15 @@ export class GameBot {
           keyboard.row();
         }
 
-        await ctx.reply('Выберите категорию игры:', { reply_markup: keyboard });
+        await ctx.reply('Выберите категорию игры:', {
+          reply_markup: keyboard,
+          message_thread_id: threadId,
+        });
       } catch (error) {
         logger.error('Error getting categories', { error });
-        await ctx.reply('Произошла ошибка при получении списка категорий');
+        await ctx.reply('Произошла ошибка при получении списка категорий', {
+          message_thread_id: threadId,
+        });
       }
       return;
     }
@@ -344,7 +369,9 @@ export class GameBot {
     try {
       const games = await this.gameService.getGames();
       if (games.length === 0) {
-        await ctx.reply('Список игр пуст');
+        await ctx.reply('Список игр пуст', {
+          message_thread_id: ctx.message?.message_thread_id,
+        });
         return;
       }
 
@@ -367,7 +394,6 @@ export class GameBot {
           const header = `\\-\\-\\-\\-\\-\\- *${category}* \\-\\-\\-\\-\\-\\-\n\n`;
           const gamesList = categoryGames
             .map(game => {
-              // Экранируем специальные символы в названии игры
               const escapedTitle = game.title.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
               const name = `[${escapedTitle}](${game.url})`;
               const price = `${game.basePrice > game.currentPrice ? `~${game.basePrice}~ ` : ''}${game.currentPrice} руб\\.`;
@@ -382,10 +408,13 @@ export class GameBot {
       await ctx.reply(message, {
         parse_mode: 'MarkdownV2',
         link_preview_options: { is_disabled: true },
+        message_thread_id: ctx.message?.message_thread_id,
       });
     } catch (error) {
       logger.error('Error getting game list', { error });
-      await ctx.reply('Произошла ошибка при получении списка игр');
+      await ctx.reply('Произошла ошибка при получении списка игр', {
+        message_thread_id: ctx.message?.message_thread_id,
+      });
     }
   }
 
@@ -401,9 +430,13 @@ export class GameBot {
           logger.warn('Game has no id', { game });
         }
       }
-      await ctx.reply('Цены успешно обновлены! Используйте /list чтобы увидеть актуальные цены.');
+      await ctx.reply('Цены успешно обновлены! Используйте /list чтобы увидеть актуальные цены.', {
+        message_thread_id: ctx.message?.message_thread_id,
+      });
     } catch (error) {
-      await ctx.reply('Произошла ошибка при обновлении цен');
+      await ctx.reply('Произошла ошибка при обновлении цен', {
+        message_thread_id: ctx.message?.message_thread_id,
+      });
     }
   }
 
@@ -484,18 +517,24 @@ export class GameBot {
       : 'Для использования бота добавьте меня в группу с топиками.\n' +
         'Там вы сможете настроить уведомления о скидках в нужном топике.';
 
-    await ctx.reply(message);
+    await ctx.reply(message, {
+      message_thread_id: ctx.message?.message_thread_id,
+    });
   }
 
   private async handleCategories(ctx: BotContext): Promise<void> {
     logger.debug('Handling /categories command', { chatId: ctx.chat?.id });
-    const processingMsg = await ctx.reply('⏳ Получаю список категорий...');
+    const processingMsg = await ctx.reply('⏳ Получаю список категорий...', {
+      message_thread_id: ctx.message?.message_thread_id,
+    });
 
     try {
       const categories = await this.gameService.getCategoriesWithGameCount();
 
       if (categories.length === 0) {
-        await ctx.reply('📝 Список категорий пуст');
+        await ctx.reply('📝 Список категорий пуст', {
+          message_thread_id: ctx.message?.message_thread_id,
+        });
         return;
       }
 
@@ -511,7 +550,9 @@ export class GameBot {
       if (ctx.chat?.id) {
         await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
       }
-      await ctx.reply(`📊 Категории:\n\n${message}`);
+      await ctx.reply(`📊 Категории:\n\n${message}`, {
+        message_thread_id: ctx.message?.message_thread_id,
+      });
     } catch (error) {
       logger.error('Error getting categories list', {
         chatId: ctx.chat?.id,
@@ -520,7 +561,9 @@ export class GameBot {
       if (ctx.chat?.id) {
         await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
       }
-      await ctx.reply('❌ Произошла ошибка при получении списка категорий');
+      await ctx.reply('❌ Произошла ошибка при получении списка категорий', {
+        message_thread_id: ctx.message?.message_thread_id,
+      });
     }
   }
 
