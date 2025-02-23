@@ -175,9 +175,14 @@ export class MessageHandlers {
     ctx.session.step = 'players';
     ctx.session.awaitingPlayers = true;
 
+    const keyboard = new InlineKeyboard().text('❌ Отменить', 'cancel_add');
+
     const message = await ctx.reply(
       `✅ Игра найдена: ${title}\n` + 'Укажите количество игроков (по умолчанию: 1)',
-      { message_thread_id: threadId }
+      {
+        message_thread_id: threadId,
+        reply_markup: keyboard,
+      }
     );
     this.updateMessageIds(ctx, message.message_id);
   }
@@ -427,6 +432,7 @@ export class MessageHandlers {
       }
       keyboard.row();
     }
+    keyboard.text('❌ Отменить', 'cancel_add').row();
     return keyboard;
   }
 

@@ -2,6 +2,7 @@ import { Context } from 'grammy';
 import { SessionFlavor } from 'grammy';
 import { SessionData } from '../types/SessionData';
 import { IGame } from '../../types';
+import logger from '../../utils/logger';
 
 type BotContext = Context & SessionFlavor<SessionData>;
 
@@ -126,17 +127,16 @@ export class MessageHelper {
   private formatGamesByCategory(gamesByCategory: Record<string, IGame[]>): string {
     return Object.entries(gamesByCategory)
       .map(([category, categoryGames]) => {
-        const header = `\\-\\-\\-\\-\\-\\- *${category}* \\-\\-\\-\\-\\-\\-\n\n`;
+        const escapedCategory = category.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
+        const header = `\\-\\-\\-\\-\\-\\- *${escapedCategory}* \\-\\-\\-\\-\\-\\-\n\n`;
         const gamesList = categoryGames
           .map(game => {
-            const escapedTitle = game.title
-              .replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&')
-              .replace(/\./g, '\\.');
+            const escapedTitle = game.title.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
             const name = `[${escapedTitle}](${game.url})`;
-            const basePrice = String(game.basePrice).replace(/\./g, '\\.');
-            const currentPrice = String(game.currentPrice).replace(/\./g, '\\.');
-            const price = `${game.basePrice > game.currentPrice ? `~${basePrice}~ ` : ''}${currentPrice} руб\\.`;
             const players = `${game.players} чел\\.`;
+            const basePrice = String(game.basePrice).replace(/[.]/g, '\\$&');
+            const currentPrice = String(game.currentPrice).replace(/[.]/g, '\\$&');
+            const price = `${game.basePrice > game.currentPrice ? `~${basePrice}~ ` : ''}${currentPrice} руб\\.`;
             return `\\- ${name} \\(${players}\\) \\- ${price}`;
           })
           .join('\n');

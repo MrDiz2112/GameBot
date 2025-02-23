@@ -108,6 +108,7 @@ export class GameBot {
     this.bot.callbackQuery(/^party:(\d+):(\d+):(\d+)$/, ctx =>
       this.partyCommandHandler.handlePartySelection(ctx)
     );
+    this.bot.callbackQuery('cancel_add', ctx => this.gameCommandHandler.handleCancelAdd(ctx));
 
     this.bot.api.setMyCommands([
       // { command: 'start', description: 'Начать работу с ботом' },

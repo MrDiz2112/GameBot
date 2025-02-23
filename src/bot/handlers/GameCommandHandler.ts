@@ -11,13 +11,38 @@ export class GameCommandHandler extends BaseHandler {
     }
 
     ctx.session = this.messageHelper.initializeAddSession(ctx);
+
+    const keyboard = new InlineKeyboard().text('❌ Отменить', 'cancel_add');
+
     const message = await ctx.reply('Пожалуйста, отправьте ссылку на игру в Steam', {
       message_thread_id: this.getThreadId(ctx),
+      reply_markup: keyboard,
     });
 
     ctx.session.messageIdsToDelete = [message.message_id];
     if (ctx.message?.message_id) {
       ctx.session.messageIdsToDelete.push(ctx.message.message_id);
+    }
+  }
+
+  async handleCancelAdd(ctx: BotContext): Promise<void> {
+    logger.debug('Handling cancel_add callback', { chatId: ctx.chat?.id });
+
+    try {
+      // Удаляем сообщения из сессии
+      if (ctx.chat?.id && ctx.session.messageIdsToDelete) {
+        for (const messageId of ctx.session.messageIdsToDelete) {
+          await ctx.api.deleteMessage(ctx.chat.id, messageId);
+        }
+      }
+
+      // Очищаем сессию
+      ctx.session = {};
+
+      await ctx.answerCallbackQuery('Добавление игры отменено');
+    } catch (error) {
+      logger.error('Error handling cancel_add', { error });
+      await ctx.answerCallbackQuery('Произошла ошибка при отмене');
     }
   }
 
