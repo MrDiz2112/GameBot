@@ -1,3 +1,5 @@
+import { PartyState } from './PartyTypes';
+
 export interface SessionData {
   gameUrl?: string;
   category?: string;
@@ -9,4 +11,5 @@ export interface SessionData {
   gameId?: number;
   step?: 'url' | 'players' | 'category' | 'edit_category' | 'edit_players' | null;
   messageIdsToDelete?: number[];
+  partyState?: PartyState;
 }

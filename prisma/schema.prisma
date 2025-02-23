@@ -57,3 +57,25 @@ model Subscriber {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model Party {
+  id        Int           @id @default(autoincrement())
+  name      String
+  message   String        @default("Народ, собираемся?")
+  chatId    BigInt
+  threadId  BigInt?
+  members   PartyMember[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model PartyMember {
+  id        Int      @id @default(autoincrement())
+  username  String
+  partyId   Int
+  party     Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partyId])
+}

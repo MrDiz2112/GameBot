@@ -7,6 +7,7 @@ import { SessionData } from './types/SessionData';
 import { BasicCommandHandler } from './handlers/BasicCommandHandler';
 import { GameCommandHandler } from './handlers/GameCommandHandler';
 import { NotificationHandler } from './handlers/NotificationHandler';
+import { PartyCommandHandler } from './handlers/PartyCommandHandler';
 import logger from '../utils/logger';
 
 type BotContext = Context & SessionFlavor<SessionData>;
@@ -17,6 +18,7 @@ export class GameBot {
   private basicCommandHandler: BasicCommandHandler;
   private gameCommandHandler: GameCommandHandler;
   private notificationHandler: NotificationHandler;
+  private partyCommandHandler: PartyCommandHandler;
   private messageHelper: MessageHelper;
 
   constructor(token: string, gameService: IGameService) {
@@ -32,6 +34,7 @@ export class GameBot {
       this.messageHelper,
       notificationService
     );
+    this.partyCommandHandler = new PartyCommandHandler(gameService, this.messageHelper);
     this.messageHandlers = new MessageHandlers(gameService, this.messageHelper);
 
     this.bot.use(
@@ -46,6 +49,7 @@ export class GameBot {
           userId: undefined,
           step: null,
           messageIdsToDelete: [],
+          partyState: undefined,
         }),
       })
     );
@@ -71,6 +75,10 @@ export class GameBot {
     this.bot.command('edit_players', ctx => this.gameCommandHandler.handleEditPlayers(ctx));
     this.bot.command('play', ctx => this.gameCommandHandler.handleSearchByPlayers(ctx));
 
+    // Party commands
+    this.bot.command('create_party', ctx => this.partyCommandHandler.handleCreateParty(ctx));
+    this.bot.command('party', ctx => this.partyCommandHandler.handleParty(ctx));
+
     // Notification commands
     this.bot.command('set_notifications', ctx =>
       this.notificationHandler.handleSetNotifications(ctx)
@@ -80,7 +88,13 @@ export class GameBot {
     );
 
     // Message handlers
-    this.bot.on('message:text', ctx => this.messageHandlers.handleMessage(ctx));
+    this.bot.on('message:text', ctx => {
+      if (ctx.session.partyState) {
+        return this.partyCommandHandler.handlePartyMessage(ctx);
+      }
+      return this.messageHandlers.handleMessage(ctx);
+    });
+
     this.bot.callbackQuery(/^category:(.+)$/, ctx =>
       this.messageHandlers.handleCategorySelection(ctx)
     );
@@ -90,6 +104,9 @@ export class GameBot {
     );
     this.bot.callbackQuery(/^edit_players:(\d+)$/, ctx =>
       this.messageHandlers.handleEditPlayers(ctx)
+    );
+    this.bot.callbackQuery(/^party:(\d+):(\d+):(\d+)$/, ctx =>
+      this.partyCommandHandler.handlePartySelection(ctx)
     );
 
     this.bot.api.setMyCommands([
@@ -103,6 +120,8 @@ export class GameBot {
       { command: 'edit_players', description: 'Изменить количество игроков' },
       { command: 'play', description: 'Найти игры по количеству игроков' },
       { command: 'delete', description: 'Удалить игру из списка' },
+      { command: 'create_party', description: 'Создать новую группу пользователей' },
+      { command: 'party', description: 'Позвать группу пользователей' },
       {
         command: 'set_notifications',
         description: 'Настроить уведомления о скидках в текущем топике',
