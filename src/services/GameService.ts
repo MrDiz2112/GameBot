@@ -408,4 +408,30 @@ export class GameService implements IGameService {
       tags: game.tags?.map(t => t.name) || [],
     };
   }
+
+  async getGamesByPlayerCount(maxPlayers: number): Promise<IGame[]> {
+    logger.debug('Getting games by player count', { maxPlayers });
+    try {
+      const games = await this.prisma.game.findMany({
+        where: {
+          players: {
+            gte: maxPlayers,
+          },
+        },
+        include: {
+          category: true,
+          tags: true,
+        },
+        orderBy: {
+          players: 'asc',
+        },
+      });
+
+      logger.info('Games retrieved successfully by player count', { count: games.length });
+      return games.map(this.mapGameToInterface);
+    } catch (error) {
+      logger.error('Failed to get games by player count', { maxPlayers, error });
+      throw error;
+    }
+  }
 }

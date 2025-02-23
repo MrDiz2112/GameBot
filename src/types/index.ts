@@ -38,6 +38,7 @@ export interface IGameService {
   updatePrice(id: number): Promise<void>;
   getCategoriesWithGameCount(): Promise<Array<{ name: string; gamesCount: number }>>;
   createCategory(name: string): Promise<{ id: number; name: string }>;
+  getGamesByPlayerCount(maxPlayers: number): Promise<IGame[]>;
 }
 
 export interface IParser {

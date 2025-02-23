@@ -219,4 +219,56 @@ export class GameCommandHandler extends BaseHandler {
       });
     }
   }
+
+  async handleSearchByPlayers(ctx: BotContext): Promise<void> {
+    logger.debug('Handling /play command', { chatId: ctx.chat?.id });
+
+    if (!(await this.validateUser(ctx))) {
+      return;
+    }
+
+    const playersArg = ctx.message?.text?.split(' ')[1];
+    const threadId = this.getThreadId(ctx);
+
+    if (!playersArg) {
+      await ctx.reply(
+        '❌ Пожалуйста, укажите количество игроков после команды.\nПример: /play 4 - найдет игры для 4 и более игроков',
+        { message_thread_id: threadId }
+      );
+      return;
+    }
+
+    const players = parseInt(playersArg);
+    if (isNaN(players) || players < 1) {
+      await ctx.reply(
+        '❌ Пожалуйста, укажите корректное количество игроков (целое число больше 0)',
+        {
+          message_thread_id: threadId,
+        }
+      );
+      return;
+    }
+
+    try {
+      const games = await this.gameService.getGamesByPlayerCount(players);
+      if (games.length === 0) {
+        await ctx.reply(`Не найдено игр для ${players} или более игроков.`, {
+          message_thread_id: threadId,
+        });
+        return;
+      }
+
+      const message = this.messageHelper.formatGamesList(games);
+      await ctx.reply(message, {
+        parse_mode: 'MarkdownV2',
+        link_preview_options: { is_disabled: true },
+        message_thread_id: threadId,
+      });
+    } catch (error) {
+      logger.error('Error getting games by player count', { error });
+      await ctx.reply('❌ Произошла ошибка при поиске игр', {
+        message_thread_id: threadId,
+      });
+    }
+  }
 }
