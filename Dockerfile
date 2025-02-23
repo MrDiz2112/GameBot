@@ -21,4 +21,7 @@ RUN npm run build
 # Очистка dev зависимостей
 RUN npm prune --production
 
+# Указываем, что контейнер может принимать соединения на порту 3000
+EXPOSE 3000
+
 CMD ["npm", "start"]
