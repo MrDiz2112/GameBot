@@ -110,23 +110,23 @@ export class GameBot {
     );
 
     this.bot.api.setMyCommands([
-      { command: 'start', description: 'Начать работу с ботом' },
+      // { command: 'start', description: 'Начать работу с ботом' },
       { command: 'add', description: 'Добавить новую игру' },
       { command: 'list', description: 'Показать список игр' },
-      { command: 'check_prices', description: 'Проверить цены' },
-      { command: 'categories', description: 'Показать список категорий и количество игр в них' },
-      { command: 'add_category', description: 'Добавить новую категорию' },
-      { command: 'edit_category', description: 'Изменить категорию игры' },
-      { command: 'edit_players', description: 'Изменить количество игроков' },
+      // { command: 'check_prices', description: 'Проверить цены' },
+      // { command: 'categories', description: 'Показать список категорий и количество игр в них' },
+      // { command: 'add_category', description: 'Добавить новую категорию' },
+      // { command: 'edit_category', description: 'Изменить категорию игры' },
+      // { command: 'edit_players', description: 'Изменить количество игроков' },
       { command: 'play', description: 'Найти игры по количеству игроков' },
-      { command: 'delete', description: 'Удалить игру из списка' },
-      { command: 'create_party', description: 'Создать новую группу пользователей' },
+      // { command: 'delete', description: 'Удалить игру из списка' },
+      // { command: 'create_party', description: 'Создать новую группу пользователей' },
       { command: 'party', description: 'Позвать группу пользователей' },
-      {
-        command: 'set_notifications',
-        description: 'Настроить уведомления о скидках в текущем топике',
-      },
-      { command: 'remove_notifications', description: 'Отключить уведомления в текущем топике' },
+      // {
+      //   command: 'set_notifications',
+      //   description: 'Настроить уведомления о скидках в текущем топике',
+      // },
+      // { command: 'remove_notifications', description: 'Отключить уведомления в текущем топике' },
       { command: 'help', description: 'Показать помощь' },
     ]);
   }

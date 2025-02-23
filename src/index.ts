@@ -29,6 +29,18 @@ process.on('unhandledRejection', (reason, promise) => {
   logger.error('Необработанная ошибка:', { reason, promise });
 });
 
+process.on('SIGTERM', () => {
+  logger.info('Получен сигнал SIGTERM, завершаем работу...');
+  // Ваш код завершения
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  logger.info('Получен сигнал SIGINT, завершаем работу...');
+  // Ваш код завершения
+  process.exit(0);
+});
+
 const steamParser = new SteamParser();
 const gameService = new GameService(steamParser);
 const bot = new GameBot(token, gameService);

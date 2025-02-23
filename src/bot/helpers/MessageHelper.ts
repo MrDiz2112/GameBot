@@ -129,9 +129,13 @@ export class MessageHelper {
         const header = `\\-\\-\\-\\-\\-\\- *${category}* \\-\\-\\-\\-\\-\\-\n\n`;
         const gamesList = categoryGames
           .map(game => {
-            const escapedTitle = game.title.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
+            const escapedTitle = game.title
+              .replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&')
+              .replace(/\./g, '\\.');
             const name = `[${escapedTitle}](${game.url})`;
-            const price = `${game.basePrice > game.currentPrice ? `~${game.basePrice}~ ` : ''}${game.currentPrice} руб\\.`;
+            const basePrice = String(game.basePrice).replace(/\./g, '\\.');
+            const currentPrice = String(game.currentPrice).replace(/\./g, '\\.');
+            const price = `${game.basePrice > game.currentPrice ? `~${basePrice}~ ` : ''}${currentPrice} руб\\.`;
             const players = `${game.players} чел\\.`;
             return `\\- ${name} \\(${players}\\) \\- ${price}`;
           })

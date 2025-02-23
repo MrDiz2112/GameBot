@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# Установка необходимых системных зависимостей
+RUN apk add --no-cache openssl openssl-dev
+
 WORKDIR /app
 
 # Установка зависимостей для сборки

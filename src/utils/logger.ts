@@ -1,7 +1,11 @@
 import winston from 'winston';
 import path from 'path';
+import fs from 'fs';
 
 const logDir = 'logs';
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir);
+}
 const { combine, timestamp, printf, colorize } = winston.format;
 
 const logFormat = printf(({ level, message, timestamp, error, ...metadata }) => {
@@ -44,7 +48,7 @@ const logger = winston.createLogger({
   ],
 });
 
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' || process.env.LOG_TO_CONSOLE === 'true') {
   logger.add(
     new winston.transports.Console({
       format: combine(colorize(), timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }), logFormat),
