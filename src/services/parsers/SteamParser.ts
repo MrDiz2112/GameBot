@@ -37,7 +37,9 @@ export class SteamParser implements IParser {
   }
 
   private processPrices($: cheerio.CheerioAPI): GamePrice {
-    const discountContainer = $('.discount_prices');
+    // Игнорируем бандлы и ищем только в первом блоке с ценой
+    const purchaseBlock = $('.game_area_purchase_game').first();
+    const discountContainer = purchaseBlock.find('.discount_prices');
 
     if (discountContainer.length > 0) {
       const originalPrice = discountContainer
@@ -55,7 +57,7 @@ export class SteamParser implements IParser {
         discount: discountPriceNum,
       };
     } else {
-      const priceString = $('.game_purchase_price').first().text().trim();
+      const priceString = purchaseBlock.find('.game_purchase_price').first().text().trim();
       return {
         basePrice: this.priceStringToNumber(priceString),
       };
