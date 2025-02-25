@@ -97,7 +97,11 @@ export class MessageHelper {
     }
 
     const gamesByCategory = this.groupGamesByCategory(games);
-    return this.formatGamesByCategory(gamesByCategory);
+    const message = this.formatGamesByCategory(gamesByCategory);
+
+    logger.info('Games list message', { message });
+
+    return message;
   }
 
   formatCategoriesList(categories: { name: string; gamesCount: number }[]): string {
